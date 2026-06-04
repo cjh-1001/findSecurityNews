@@ -22,6 +22,7 @@ ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CONFIG = ROOT / "config" / "sources.toml"
 DEFAULT_DB = ROOT / "data" / "security_news.db"
 DEFAULT_DIGEST_DIR = ROOT / "outputs" / "daily"
+DEFAULT_SITE_DIR = ROOT / "outputs" / "site"
 LOCAL_TZ = timezone(timedelta(hours=8), name="Asia/Shanghai")
 SOURCE_LABELS = {
     "security_affairs_security": "Security Affairs",
@@ -97,6 +98,12 @@ def build_parser() -> argparse.ArgumentParser:
     digest_cmd = subparsers.add_parser("digest")
     digest_cmd.add_argument("--limit", type=int, default=20)
     digest_cmd.add_argument("--output-dir", type=Path, default=DEFAULT_DIGEST_DIR)
+
+    export_cmd = subparsers.add_parser("export-html")
+    export_cmd.add_argument("--limit", type=int, default=300)
+    export_cmd.add_argument("--output-dir", type=Path, default=DEFAULT_SITE_DIR)
+    export_cmd.add_argument("--include-duplicates", action="store_true")
+    export_cmd.add_argument("--title", default="安全资讯")
 
     dedup_cmd = subparsers.add_parser("dedup")
     dedup_cmd.add_argument("--limit", type=int, default=1000)
@@ -535,6 +542,18 @@ def main(argv: list[str] | None = None) -> int:
         return process_ai(args, db)
     if args.command == "digest":
         return digest(args, db)
+    if args.command == "export-html":
+        from .static_site import write_static_site
+
+        path = write_static_site(
+            args.db,
+            output_dir=args.output_dir,
+            limit=args.limit,
+            include_duplicates=args.include_duplicates,
+            title=args.title,
+        )
+        print(f"HTML site written: {path}")
+        return 0
     if args.command == "dedup":
         return dedup(args, db)
     if args.command == "dashboard":

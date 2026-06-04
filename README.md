@@ -18,6 +18,7 @@ py .\run.py init-db
 py .\run.py collect --limit 10 --digest
 py .\run.py list --limit 10
 py .\run.py dashboard
+py .\run.py export-html
 ```
 
 ## One-Command Setup
@@ -63,6 +64,25 @@ python3 run.py dashboard --host 127.0.0.1 --port 8000
 The dashboard includes article statistics, source filters, keyword/date search, article detail pages,
 cleanup month buckets, cleanup preview, archive-and-delete, and optional SQLite `VACUUM`.
 Cleanup archives are written to `outputs/archive/` before rows are deleted.
+
+## Static HTML Site
+
+Generate a directly accessible HTML site from collected articles:
+
+```powershell
+py .\run.py collect --limit 30 --ai
+py .\run.py export-html --limit 300 --output-dir .\outputs\site --title "安全资讯"
+```
+
+Open `outputs/site/index.html` in a browser, or deploy the whole `outputs/site/` directory as static files.
+Each article gets its own HTML page under `outputs/site/articles/`.
+
+Linux:
+
+```bash
+python3 run.py collect --limit 30 --ai
+python3 run.py export-html --limit 300 --output-dir outputs/site --title "安全资讯"
+```
 
 ```powershell
 $env:OPENAI_API_KEY = "your_api_key"
