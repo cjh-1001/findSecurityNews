@@ -287,189 +287,304 @@ def base_html(title: str, active: str, body: str) -> str:
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
   <title>{h(title)}</title>
   <style>
+    /* ============================================================
+       Design Tokens
+       ============================================================ */
     :root {{
-      color-scheme: light;
-      --bg: #f7f8fa;
+      color-scheme: light dark;
+      --bg: #f3f4f6;
       --surface: #ffffff;
-      --border: #d8dee7;
-      --text: #18202b;
-      --muted: #657184;
-      --blue: #1f6feb;
-      --blue-dark: #1858bd;
-      --red: #c42b1c;
-      --red-soft: #fcebea;
-      --green: #16794c;
-      --row: #fbfcfe;
+      --surface-2: #f9fafb;
+      --surface-3: #f3f4f6;
+      --border: #e5e7eb;
+      --border-light: #f0f1f3;
+      --text: #111827;
+      --text-secondary: #4b5563;
+      --muted: #9ca3af;
+      --shadow-sm: 0 1px 2px rgba(0,0,0,.04);
+      --shadow: 0 1px 3px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04);
+      --radius-sm: 6px;
+      --radius: 10px;
+      --radius-lg: 14px;
+      --accent: #2563eb;
+      --accent-light: #eff6ff;
+      --accent-dark: #1d4ed8;
+      --red: #dc2626;
+      --red-bg: #fef2f2;
+      --red-border: #fecaca;
+      --green: #059669;
+      --green-bg: #ecfdf5;
+      --green-border: #a7f3d0;
+      --yellow: #ca8a04;
+      --yellow-bg: #fefce8;
+      --stat-1: #2563eb;
+      --stat-2: #7c3aed;
+      --stat-3: #059669;
+      --stat-4: #ea580c;
+      --stat-5: #dc2626;
+      --stat-6: #2563eb;
     }}
-    * {{ box-sizing: border-box; }}
+    @media (prefers-color-scheme: dark) {{
+      :root {{
+        --bg: #0d1117;
+        --surface: #161b22;
+        --surface-2: #1c2128;
+        --surface-3: #21262d;
+        --border: #30363d;
+        --border-light: #262c34;
+        --text: #e6edf3;
+        --text-secondary: #8b949e;
+        --muted: #6e7681;
+        --shadow-sm: 0 1px 2px rgba(0,0,0,.2);
+        --shadow: 0 1px 3px rgba(0,0,0,.3);
+        --accent: #58a6ff;
+        --accent-light: #0d2847;
+        --accent-dark: #79b8ff;
+        --red: #f85149;
+        --red-bg: #2d1114;
+        --red-border: #5c1d20;
+        --green: #3fb950;
+        --green-bg: #0d2d17;
+        --green-border: #1a5c2e;
+        --yellow: #d29922;
+        --yellow-bg: #2d240a;
+        --stat-1: #58a6ff;
+        --stat-2: #a371f7;
+        --stat-3: #3fb950;
+        --stat-4: #f0883e;
+        --stat-5: #f85149;
+        --stat-6: #58a6ff;
+      }}
+    }}
+
+    /* ============================================================
+       Reset & Base
+       ============================================================ */
+    *, *::before, *::after {{ box-sizing: border-box; }}
     body {{
-      margin: 0;
-      background: var(--bg);
-      color: var(--text);
-      font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      margin: 0; background: var(--bg); color: var(--text);
+      font: 14px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI",
+            "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+      -webkit-font-smoothing: antialiased;
     }}
+    a {{ color: var(--accent); text-decoration: none; transition: color .15s; }}
+    a:hover {{ color: var(--accent-dark); }}
+
+    /* ============================================================
+       Header
+       ============================================================ */
     header {{
-      background: var(--surface);
-      border-bottom: 1px solid var(--border);
-      position: sticky;
-      top: 0;
-      z-index: 5;
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      position: sticky; top: 0; z-index: 10;
+    }}
+    @supports (backdrop-filter: blur(12px)) {{
+      header {{
+        background: color-mix(in srgb, var(--surface) 88%, transparent);
+        backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+      }}
     }}
     .bar {{
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 16px;
-      max-width: 1360px;
-      margin: 0 auto;
-      padding: 12px 20px;
+      display: flex; align-items: center; justify-content: space-between; gap: 20px;
+      max-width: 1360px; margin: 0 auto; padding: 12px 24px;
     }}
-    .brand {{ font-size: 17px; font-weight: 700; white-space: nowrap; }}
-    nav {{ display: flex; align-items: center; gap: 4px; }}
+    .brand-group {{ display: flex; align-items: center; gap: 10px; }}
+    .brand-icon {{
+      width: 32px; height: 32px; border-radius: var(--radius-sm);
+      background: linear-gradient(135deg, var(--accent) 0%, #60a5fa 100%);
+      display: flex; align-items: center; justify-content: center;
+      color: #fff; font-size: 15px; font-weight: 800; flex-shrink: 0;
+    }}
+    .brand {{ font-size: 17px; font-weight: 750; letter-spacing: -.01em; white-space: nowrap; }}
+    nav {{ display: flex; align-items: center; gap: 2px; }}
     .nav-link {{
-      color: var(--muted);
-      text-decoration: none;
-      padding: 7px 10px;
-      border-radius: 6px;
-      font-weight: 600;
+      color: var(--text-secondary); text-decoration: none;
+      padding: 7px 12px; border-radius: var(--radius-sm); font-weight: 600;
+      font-size: 13px; transition: all .15s;
     }}
-    .nav-link.active {{ background: #eaf1ff; color: var(--blue-dark); }}
-    main {{ max-width: 1360px; margin: 0 auto; padding: 18px 20px 32px; }}
-    .toolbar, .panel, .stats {{
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 8px;
+    .nav-link:hover {{ background: var(--surface-3); color: var(--text); }}
+    .nav-link.active {{ background: var(--accent-light); color: var(--accent); }}
+
+    /* ============================================================
+       Layout
+       ============================================================ */
+    main {{ max-width: 1360px; margin: 0 auto; padding: 20px 24px 40px; }}
+
+    /* ============================================================
+       Stats Cards
+       ============================================================ */
+    .stats {{
+      display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px;
+      margin-bottom: 14px;
+    }}
+    .metric {{
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 14px 16px;
+      position: relative; overflow: hidden;
+      transition: transform .15s, box-shadow .15s; box-shadow: var(--shadow-sm);
+    }}
+    .metric:hover {{ transform: translateY(-1px); box-shadow: var(--shadow); }}
+    .metric::before {{
+      content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+    }}
+    .metric:nth-child(1)::before {{ background: var(--stat-1); }}
+    .metric:nth-child(2)::before {{ background: var(--stat-2); }}
+    .metric:nth-child(3)::before {{ background: var(--stat-3); }}
+    .metric:nth-child(4)::before {{ background: var(--stat-4); }}
+    .metric:nth-child(5)::before {{ background: var(--stat-5); }}
+    .metric:nth-child(6)::before {{ background: var(--stat-6); }}
+    .metric-value {{ display: block; font-size: 24px; font-weight: 750; letter-spacing: -.02em; line-height: 1.15; }}
+    .metric-label {{ color: var(--text-secondary); font-size: 12px; font-weight: 500; margin-top: 2px; display: block; }}
+
+    /* ============================================================
+       Toolbar & Forms
+       ============================================================ */
+    .toolbar, .panel {{
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius);
     }}
     .toolbar {{
       display: grid;
       grid-template-columns: minmax(220px, 1.6fr) repeat(3, minmax(130px, .7fr)) auto;
-      gap: 10px;
-      align-items: end;
-      padding: 12px;
-      margin-bottom: 14px;
+      gap: 10px; align-items: end; padding: 14px 16px; margin-bottom: 14px;
+      box-shadow: var(--shadow-sm);
     }}
-    .stats {{
-      display: grid;
-      grid-template-columns: repeat(5, minmax(120px, 1fr));
-      gap: 0;
-      margin-bottom: 14px;
-      overflow: hidden;
-    }}
-    .metric {{ padding: 12px 14px; border-right: 1px solid var(--border); }}
-    .metric:last-child {{ border-right: 0; }}
-    .metric-value {{ display: block; font-size: 22px; font-weight: 750; }}
-    .metric-label {{ color: var(--muted); font-size: 12px; }}
-    label {{ display: grid; gap: 4px; color: var(--muted); font-size: 12px; font-weight: 650; }}
+    label {{ display: grid; gap: 5px; color: var(--text-secondary); font-size: 12px; font-weight: 650; }}
     input, select {{
-      width: 100%;
-      min-height: 36px;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 7px 9px;
-      background: #fff;
-      color: var(--text);
-      font: inherit;
+      width: 100%; min-height: 38px; border: 1px solid var(--border);
+      border-radius: var(--radius-sm); padding: 7px 10px;
+      background: var(--surface); color: var(--text); font: inherit; font-size: 13px;
+      transition: border-color .15s, box-shadow .15s; outline: none;
+    }}
+    input:focus, select:focus {{
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 15%, transparent);
     }}
     .checkbox {{
-      display: flex;
-      align-items: center;
-      gap: 7px;
-      min-height: 36px;
-      color: var(--text);
+      display: flex; align-items: center; gap: 7px; min-height: 38px;
+      color: var(--text); font-size: 13px;
+    }}
+    .checkbox input {{ width: 16px; min-height: 16px; accent-color: var(--accent); }}
+    button, .button {{
+      display: inline-flex; align-items: center; justify-content: center;
+      min-height: 38px; border: 1px solid var(--accent); border-radius: var(--radius-sm);
+      padding: 7px 14px; background: var(--accent); color: #fff;
+      text-decoration: none; font: inherit; font-weight: 650; font-size: 13px;
+      cursor: pointer; white-space: nowrap; transition: all .15s;
+    }}
+    button:hover, .button:hover {{ background: var(--accent-dark); border-color: var(--accent-dark); }}
+    button.secondary, .button.secondary {{
+      background: var(--surface); color: var(--accent);
+    }}
+    button.secondary:hover, .button.secondary:hover {{
+      background: var(--accent-light);
+    }}
+    button.muted, .button.muted {{
+      background: var(--surface); color: var(--muted); border-color: var(--border);
+      pointer-events: none; opacity: .5;
+    }}
+    button.danger {{ background: var(--red); border-color: var(--red); }}
+    button.danger:hover {{ background: #b91c1c; border-color: #b91c1c; }}
+
+    /* ============================================================
+       Panel & Table
+       ============================================================ */
+    .panel {{ margin-bottom: 14px; overflow: hidden; box-shadow: var(--shadow-sm); }}
+    .panel-head {{
+      display: flex; justify-content: space-between; align-items: center;
+      gap: 14px; padding: 14px 18px; border-bottom: 1px solid var(--border);
+      background: var(--surface-2);
+    }}
+    h1, h2 {{ margin: 0; font-size: 15px; font-weight: 700; letter-spacing: -.01em; }}
+    .muted {{ color: var(--muted); font-size: 13px; }}
+    table {{ width: 100%; border-collapse: collapse; table-layout: fixed; }}
+    th, td {{ padding: 11px 14px; border-bottom: 1px solid var(--border-light); vertical-align: top; }}
+    th {{
+      color: var(--muted); text-align: left; font-size: 11.5px; font-weight: 700;
+      background: var(--surface-2); text-transform: uppercase; letter-spacing: .04em;
+    }}
+    tbody tr {{ transition: background .1s; }}
+    tbody tr:hover td {{ background: var(--surface-3); }}
+    tbody tr:last-child td {{ border-bottom: none; }}
+    .title-cell {{ width: 38%; }}
+    .source-cell {{ width: 140px; }}
+    .date-cell {{ width: 170px; }}
+    .status-cell {{ width: 140px; }}
+    .action-cell {{ width: 80px; text-align: right; }}
+    .title-link {{ color: var(--text); font-weight: 650; text-decoration: none; transition: color .15s; }}
+    .title-link:hover {{ color: var(--accent); }}
+
+    /* ============================================================
+       Pills
+       ============================================================ */
+    .pill {{
+      display: inline-flex; align-items: center; max-width: 100%; min-height: 24px;
+      padding: 3px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 600;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }}
+    .pill.green {{ background: var(--green-bg); color: var(--green); border: 1px solid var(--green-border); }}
+    .pill.red {{ background: var(--red-bg); color: var(--red); border: 1px solid var(--red-border); }}
+    .pill.neutral {{ background: var(--surface-3); color: var(--text-secondary); border: 1px solid var(--border); }}
+    .pill.yellow {{ background: var(--yellow-bg); color: var(--yellow); border: 1px solid var(--border); }}
+
+    /* ============================================================
+       Article Detail & Cleanup
+       ============================================================ */
+    .grid-two {{ display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }}
+    .form-grid {{
+      display: grid; grid-template-columns: repeat(4, minmax(120px, 1fr));
+      gap: 10px; padding: 16px;
+    }}
+    .form-actions {{ display: flex; gap: 10px; align-items: end; }}
+    .content {{ padding: 18px; }}
+    pre {{
+      margin: 0; white-space: pre-wrap; overflow-wrap: anywhere;
+      background: var(--surface-3); border: 1px solid var(--border);
+      border-radius: var(--radius-sm); padding: 14px;
+      max-height: 520px; overflow: auto;
+      font-size: 13.5px; line-height: 1.7;
+    }}
+    .message {{
+      padding: 12px 16px; border: 1px solid var(--border);
+      border-radius: var(--radius-sm); background: var(--surface); margin-bottom: 14px;
       font-size: 13px;
     }}
-    .checkbox input {{ width: 16px; min-height: 16px; }}
-    button, .button {{
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      min-height: 36px;
-      border: 1px solid var(--blue);
-      border-radius: 6px;
-      padding: 7px 12px;
-      background: var(--blue);
-      color: #fff;
-      text-decoration: none;
-      font: inherit;
-      font-weight: 700;
-      cursor: pointer;
-      white-space: nowrap;
+    .message.error {{
+      border-color: var(--red-border); background: var(--red-bg); color: #991b1b;
     }}
-    button:hover, .button:hover {{ background: var(--blue-dark); }}
-    button.secondary, .button.secondary {{ background: #fff; color: var(--blue); }}
-    button.danger {{ background: var(--red); border-color: var(--red); }}
-    .panel {{ margin-bottom: 14px; overflow: hidden; }}
-    .panel-head {{
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 12px;
-      padding: 12px 14px;
-      border-bottom: 1px solid var(--border);
-      background: #fbfcfe;
+    .pager {{ display: flex; justify-content: flex-end; gap: 8px; padding: 14px; }}
+
+    /* ============================================================
+       Responsive
+       ============================================================ */
+    @media (max-width: 960px) {{
+      .stats {{ grid-template-columns: repeat(3, 1fr); }}
+      .toolbar, .form-grid, .grid-two {{ grid-template-columns: 1fr 1fr; }}
     }}
-    h1, h2 {{ margin: 0; font-size: 16px; line-height: 1.3; }}
-    .muted {{ color: var(--muted); }}
-    table {{ width: 100%; border-collapse: collapse; table-layout: fixed; }}
-    th, td {{ padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }}
-    th {{ color: var(--muted); text-align: left; font-size: 12px; background: #fbfcfe; }}
-    tr:nth-child(even) td {{ background: var(--row); }}
-    .title-cell {{ width: 38%; }}
-    .source-cell {{ width: 150px; }}
-    .date-cell {{ width: 170px; }}
-    .status-cell {{ width: 150px; }}
-    .action-cell {{ width: 90px; text-align: right; }}
-    .title-link {{ color: var(--text); font-weight: 700; text-decoration: none; }}
-    .title-link:hover {{ color: var(--blue); }}
-    .pill {{
-      display: inline-flex;
-      align-items: center;
-      max-width: 100%;
-      min-height: 24px;
-      padding: 2px 7px;
-      border-radius: 999px;
-      background: #eef2f7;
-      color: #344054;
-      font-size: 12px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }}
-    .pill.green {{ background: #e8f5ee; color: var(--green); }}
-    .pill.red {{ background: var(--red-soft); color: var(--red); }}
-    .grid-two {{ display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }}
-    .form-grid {{ display: grid; grid-template-columns: repeat(4, minmax(120px, 1fr)); gap: 10px; padding: 14px; }}
-    .form-actions {{ display: flex; gap: 10px; align-items: end; }}
-    .content {{ padding: 14px; }}
-    pre {{
-      margin: 0;
-      white-space: pre-wrap;
-      overflow-wrap: anywhere;
-      background: #f2f4f7;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 12px;
-      max-height: 520px;
-      overflow: auto;
-    }}
-    .message {{ padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px; background: #fff; margin-bottom: 14px; }}
-    .message.error {{ border-color: #f0b8b2; background: var(--red-soft); color: #7d1a11; }}
-    .pager {{ display: flex; justify-content: flex-end; gap: 8px; padding: 12px; }}
-    @media (max-width: 900px) {{
-      .toolbar, .form-grid, .grid-two, .stats {{ grid-template-columns: 1fr; }}
-      .metric {{ border-right: 0; border-bottom: 1px solid var(--border); }}
-      .metric:last-child {{ border-bottom: 0; }}
+    @media (max-width: 680px) {{
+      .stats {{ grid-template-columns: 1fr 1fr; }}
+      .toolbar, .form-grid, .grid-two {{ grid-template-columns: 1fr; }}
+      .metric {{ border-right: 0; }}
       th.source-cell, td.source-cell, th.status-cell, td.status-cell {{ display: none; }}
       .title-cell {{ width: auto; }}
       .date-cell {{ width: 120px; }}
       .bar {{ align-items: flex-start; flex-direction: column; }}
+      main {{ padding: 14px 12px 32px; }}
     }}
   </style>
 </head>
 <body>
-  <header><div class="bar"><div class="brand">findSecurityNews</div><nav>{nav}</nav></div></header>
+  <header>
+    <div class="bar">
+      <div class="brand-group">
+        <div class="brand-icon">S</div>
+        <div class="brand">findSecurityNews</div>
+      </div>
+      <nav>{nav}</nav>
+    </div>
+  </header>
   <main>{body}</main>
 </body>
 </html>"""
@@ -480,15 +595,17 @@ def query_link(path: str, params: dict[str, object]) -> str:
     return f"{path}?{urlencode(clean)}" if clean else path
 
 
-def render_stats(store: DashboardStore) -> str:
+def render_stats(store: DashboardStore, extra_metric: tuple[str, object] | None = None) -> str:
     stats = store.stats()
     items = [
-        ("文章总数", stats["total"]),
-        ("唯一文章", stats["unique_total"]),
-        ("重复记录", stats["duplicate_total"]),
-        ("AI 结果", stats["ai_total"]),
-        ("来源数", stats["source_total"]),
+        ("📰 文章总数", stats["total"]),
+        ("✅ 唯一文章", stats["unique_total"]),
+        ("🔄 重复记录", stats["duplicate_total"]),
+        ("🤖 AI 分析", stats["ai_total"]),
+        ("📡 来源数", stats["source_total"]),
     ]
+    if extra_metric:
+        items.append(extra_metric)
     return '<section class="stats">' + "".join(
         f'<div class="metric"><span class="metric-value">{h(value)}</span>'
         f'<span class="metric-label">{h(label)}</span></div>'
@@ -550,12 +667,21 @@ def render_article_table(rows: list[sqlite3.Row]) -> str:
             status.append('<span class="pill green">唯一</span>')
         if ai:
             priority = ai.get("priority") or "AI"
-            status.append(f'<span class="pill">{h(priority)}</span>')
+            priority_cls = ""
+            if priority.lower() in ("critical", "high"):
+                priority_cls = "red"
+            elif priority.lower() == "medium":
+                priority_cls = "yellow"
+            elif priority.lower() == "low":
+                priority_cls = "green"
+            else:
+                priority_cls = "neutral"
+            status.append(f'<span class="pill {priority_cls}">{h(priority)}</span>')
         table_rows.append(
             "<tr>"
             f'<td class="title-cell"><a class="title-link" href="/article?id={h(row["id"])}">'
             f'{h(row["title"])}</a><div class="muted">{h(truncate(row["summary"] or row["content_text"], 150))}</div></td>'
-            f'<td class="source-cell"><span class="pill">{h(row["source_name"])}</span></td>'
+            f'<td class="source-cell"><span class="pill neutral">{h(row["source_name"])}</span></td>'
             f'<td class="date-cell">{h(format_article_time(row["published_at"]))}</td>'
             f'<td class="status-cell">{" ".join(status)}</td>'
             f'<td class="action-cell"><a class="button secondary" href="/article?id={h(row["id"])}">查看</a></td>'
