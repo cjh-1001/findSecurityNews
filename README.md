@@ -61,7 +61,7 @@ For a Linux server, bind to an internal address or put it behind an authenticate
 python3 run.py dashboard --host 127.0.0.1 --port 8000
 ```
 
-The dashboard includes article statistics, source filters, keyword/date search, article detail pages,
+The dashboard includes article statistics, source filters, keyword/date search, rich article detail pages,
 cleanup month buckets, cleanup preview, archive-and-delete, and optional SQLite `VACUUM`.
 Cleanup archives are written to `outputs/archive/` before rows are deleted.
 
@@ -75,7 +75,10 @@ py .\run.py export-html --limit 300 --output-dir .\outputs\site --title "安全�
 ```
 
 Open `outputs/site/index.html` in a browser, or deploy the whole `outputs/site/` directory as static files.
-Each article gets its own HTML page under `outputs/site/articles/`.
+Each article gets its own HTML page under `outputs/site/articles/`. Article pages preserve allowed original
+HTML content such as images, code blocks, tables, lists, quotes, and links. For English articles processed
+with AI, the page provides an original/Chinese translation switch. Feishu pushes use the AI-reviewed
+`summary_zh` synopsis generated from the full article text.
 
 Linux:
 

@@ -158,36 +158,12 @@ def collect(args: argparse.Namespace, db: Database) -> int:
         try:
             if source.type == "rss":
                 xml_text = fetch_text(source.url)
-                articles = parse_rss(source, xml_text, limit=args.limit)
+                rss_articles = parse_rss(source, xml_text, limit=args.limit)
+                articles = fetch_full_articles(source, rss_articles)
             elif source.type == "rss_html":
                 xml_text = fetch_text(source.url)
                 rss_articles = parse_rss(source, xml_text, limit=args.limit)
-                articles = []
-                for index, rss_article in enumerate(rss_articles, start=1):
-                    print(f"Fetching article {index}/{len(rss_articles)}: {rss_article.url}")
-                    try:
-                        article_html = fetch_text(rss_article.url, timeout=30, retries=1)
-                    except RuntimeError as exc:
-                        print(
-                            f"Skipping article fetch failure: {rss_article.url} ({exc})",
-                            file=sys.stderr,
-                        )
-                        articles.append(rss_article)
-                        continue
-                    article = article_from_html(
-                        source,
-                        rss_article.url,
-                        article_html,
-                        published_at=rss_article.published_at,
-                    )
-                    if not article.categories:
-                        article = article.__class__(
-                            **{**article.__dict__, "categories": rss_article.categories}
-                        )
-                    if article.url and article.title:
-                        articles.append(article)
-                    if index < len(rss_articles):
-                        sleep(1)
+                articles = fetch_full_articles(source, rss_articles)
             elif source.type == "sitemap":
                 xml_text = fetch_text(source.url)
                 entries = parse_sitemap(source, xml_text, limit=args.limit)
@@ -276,6 +252,54 @@ def collect(args: argparse.Namespace, db: Database) -> int:
     if failed_sources and collected == 0:
         return 1
     return 0
+
+
+def fetch_full_articles(source, rss_articles):
+    articles = []
+    for index, rss_article in enumerate(rss_articles, start=1):
+        print(f"Fetching article {index}/{len(rss_articles)}: {rss_article.url}")
+        try:
+            article_html = fetch_text(rss_article.url, timeout=30, retries=1)
+        except RuntimeError as exc:
+            print(
+                f"Skipping article fetch failure: {rss_article.url} ({exc})",
+                file=sys.stderr,
+            )
+            articles.append(rss_article)
+            continue
+        page_article = article_from_html(
+            source,
+            rss_article.url,
+            article_html,
+            published_at=rss_article.published_at,
+        )
+        article = merge_article(rss_article, page_article)
+        if article.url and article.title:
+            articles.append(article)
+        if index < len(rss_articles):
+            sleep(1)
+    return articles
+
+
+def merge_article(rss_article, page_article):
+    page_text = page_article.content_text or ""
+    rss_text = rss_article.content_text or ""
+    use_page_content = len(page_text) >= max(200, int(len(rss_text) * 0.8))
+    return page_article.__class__(
+        source_name=page_article.source_name or rss_article.source_name,
+        url=page_article.url or rss_article.url,
+        title=page_article.title or rss_article.title,
+        author=page_article.author or rss_article.author,
+        published_at=page_article.published_at or rss_article.published_at,
+        summary=page_article.summary or rss_article.summary,
+        content_html=(
+            page_article.content_html
+            if use_page_content
+            else (rss_article.content_html or page_article.content_html)
+        ),
+        content_text=page_text if use_page_content else (rss_text or page_text),
+        categories=page_article.categories or rss_article.categories,
+    )
 
 
 def list_articles(args: argparse.Namespace, db: Database) -> int:
@@ -399,7 +423,7 @@ def build_feishu_text(rows, range_label: str = "") -> str:
 
     for index, row in enumerate(rows, start=1):
         ai = row_ai(row)
-        brief = ai.get("brief_zh") or ai.get("summary_zh") or fallback_brief(row)
+        synopsis = ai.get("summary_zh") or ai.get("brief_zh") or fallback_brief(row)
         key_points = normalize_list(ai.get("key_points"))
         cves = normalize_list(ai.get("cves"))
         tags = normalize_list(ai.get("tags_zh"))
@@ -424,13 +448,11 @@ def build_feishu_text(rows, range_label: str = "") -> str:
                 lines.append("；".join(meta))
         lines.extend(
             [
-                f"简介: {truncate(brief, 260)}",
+                f"梗概: {truncate(synopsis, 360)}",
             ]
         )
         if key_points:
             lines.append(f"重点: {truncate('；'.join(key_points[:3]), 260)}")
-        if ai.get("translation_zh") and not (ai.get("brief_zh") or ai.get("summary_zh")):
-            lines.append(f"译文: {truncate(ai['translation_zh'], 260)}")
         lines.extend([f"链接: {row['url']}", ""])
     return "\n".join(lines).strip()
 

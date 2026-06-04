@@ -14,8 +14,17 @@ BLOCK_TAGS = {
     "h3",
     "h4",
     "li",
+    "ol",
     "p",
+    "pre",
     "section",
+    "table",
+    "tbody",
+    "td",
+    "th",
+    "thead",
+    "tr",
+    "ul",
 }
 
 SKIP_TAGS = {"script", "style", "noscript", "svg"}
@@ -26,33 +35,43 @@ class TextExtractor(HTMLParser):
         super().__init__(convert_charrefs=True)
         self.parts: list[str] = []
         self.skip_depth = 0
+        self.pre_depth = 0
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if tag in SKIP_TAGS:
             self.skip_depth += 1
             return
+        if tag == "pre":
+            self.pre_depth += 1
         if tag in BLOCK_TAGS:
             self.parts.append("\n")
+        if tag == "li":
+            self.parts.append("- ")
 
     def handle_endtag(self, tag: str) -> None:
         if tag in SKIP_TAGS and self.skip_depth:
             self.skip_depth -= 1
             return
+        if tag == "pre" and self.pre_depth:
+            self.pre_depth -= 1
         if tag in BLOCK_TAGS:
             self.parts.append("\n")
 
     def handle_data(self, data: str) -> None:
         if self.skip_depth:
             return
-        text = data.strip()
+        if self.pre_depth:
+            self.parts.append(data)
+            return
+        text = re.sub(r"\s+", " ", data.strip())
         if text:
-            self.parts.append(text)
+            self.parts.append(text + " ")
 
     def text(self) -> str:
-        raw = " ".join(self.parts)
+        raw = "".join(self.parts)
         raw = unescape(raw)
         raw = re.sub(r"[ \t\r\f\v]+", " ", raw)
-        raw = re.sub(r"\n\s+", "\n", raw)
+        raw = re.sub(r"[ \t]*\n[ \t]*", "\n", raw)
         raw = re.sub(r"\n{3,}", "\n\n", raw)
         return raw.strip()
 

@@ -88,7 +88,7 @@ class AIProcessor:
         self.api_key = os.getenv("OPENAI_API_KEY", "")
         self.base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
         self.model = os.getenv("OPENAI_MODEL", DEFAULT_MODEL)
-        self.max_tokens = int(os.getenv("AI_MAX_TOKENS", "4096"))
+        self.max_tokens = int(os.getenv("AI_MAX_TOKENS", "8192"))
         self.provider = os.getenv("AI_PROVIDER", "").strip().lower()
         if not self.provider and "anthropic" in self.base_url.lower():
             self.provider = "anthropic"
@@ -110,20 +110,23 @@ class AIProcessor:
         prompt = {
             "title": title,
             "categories": categories,
-            "text": text[:12000],
+            "text": text[:24000],
         }
         messages = [
             {
                 "role": "system",
                 "content": (
                     "You are a cyber threat intelligence analyst. Return compact JSON only. "
-                    "Summarize and translate security news into Chinese, extract useful entities, "
-                    "and avoid unsupported claims. Preserve company, vendor, product, service, "
+                    "Read the full article content, verify the synopsis against the full text, "
+                    "translate English articles into Chinese, extract useful entities, and avoid "
+                    "unsupported claims. Preserve company, vendor, product, service, "
                     "malware family, threat actor, vulnerability, protocol, and CVE names in their "
                     "original English form unless the source itself uses Chinese. Use Chinese prose "
-                    "for summary_zh, translation_zh, and key_points, but do not translate proper "
-                    "nouns. For example, write 'Acer Connect W6x', not '宏碁 Connect W6x'; write "
-                    "'Microsoft', not '微软', when the source says Microsoft."
+                    "for summary_zh, translation_zh, brief_zh, and key_points, but do not translate "
+                    "proper nouns. summary_zh must be a verified synopsis based on the full article, "
+                    "not the RSS description. translation_zh must be a full Chinese translation when "
+                    "the source article is primarily English; if the source is already Chinese, return "
+                    "an empty string for translation_zh."
                 ),
             },
             {
@@ -131,8 +134,10 @@ class AIProcessor:
                 "content": (
                     "Analyze this article. Return JSON with keys: summary_zh, translation_zh, "
                     "security_type, priority, cves, vendors, products, threat_actors, malware, "
-                    "iocs, key_points, brief_zh, tags_zh. brief_zh is one concise Chinese sentence "
-                    "for a push notification, not a copied source excerpt. tags_zh is 3-6 short "
+                    "iocs, key_points, brief_zh, tags_zh. summary_zh is 2-4 Chinese sentences that "
+                    "summarize the full article after checking the whole text. translation_zh is the "
+                    "full Chinese translation for English articles. brief_zh is one concise Chinese "
+                    "sentence derived from summary_zh. tags_zh is 3-6 short "
                     "Chinese security tags. security_type must be one of: vulnerability, malware, "
                     "ransomware, threat_intelligence, incident, security_news. priority must be one "
                     "of: critical, high, medium, low. "
@@ -146,6 +151,7 @@ class AIProcessor:
             "model": self.model,
             "messages": messages,
             "response_format": {"type": "json_object"},
+            "max_tokens": self.max_tokens,
         }
         request = Request(
             f"{self.base_url}/chat/completions",
@@ -176,23 +182,28 @@ class AIProcessor:
         prompt = {
             "title": title,
             "categories": categories,
-            "text": text[:12000],
+            "text": text[:24000],
         }
         system = (
             "You are a cyber threat intelligence analyst. Return compact JSON only. "
-            "Summarize and translate security news into Chinese, extract useful entities, "
-            "and avoid unsupported claims. Preserve company, vendor, product, service, "
+            "Read the full article content, verify the synopsis against the full text, "
+            "translate English articles into Chinese, extract useful entities, and avoid "
+            "unsupported claims. Preserve company, vendor, product, service, "
             "malware family, threat actor, vulnerability, protocol, and CVE names in their "
             "original English form unless the source itself uses Chinese. Use Chinese prose "
-            "for summary_zh, translation_zh, and key_points, but do not translate proper "
-            "nouns. For example, write 'Acer Connect W6x', not '宏碁 Connect W6x'; write "
-            "'Microsoft', not '微软', when the source says Microsoft."
+            "for summary_zh, translation_zh, brief_zh, and key_points, but do not translate "
+            "proper nouns. summary_zh must be a verified synopsis based on the full article, "
+            "not the RSS description. translation_zh must be a full Chinese translation when "
+            "the source article is primarily English; if the source is already Chinese, return "
+            "an empty string for translation_zh."
         )
         user = (
             "Analyze this article. Return JSON with keys: summary_zh, translation_zh, "
             "security_type, priority, cves, vendors, products, threat_actors, malware, "
-            "iocs, key_points, brief_zh, tags_zh. brief_zh is one concise Chinese sentence "
-            "for a push notification, not a copied source excerpt. tags_zh is 3-6 short "
+            "iocs, key_points, brief_zh, tags_zh. summary_zh is 2-4 Chinese sentences that "
+            "summarize the full article after checking the whole text. translation_zh is the "
+            "full Chinese translation for English articles. brief_zh is one concise Chinese "
+            "sentence derived from summary_zh. tags_zh is 3-6 short "
             "Chinese security tags. security_type must be one of: vulnerability, malware, "
             "ransomware, threat_intelligence, incident, security_news. priority must be one "
             "of: critical, high, medium, low. "

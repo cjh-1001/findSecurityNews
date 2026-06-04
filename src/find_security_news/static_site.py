@@ -7,6 +7,7 @@ import html
 import json
 import sqlite3
 
+from .rich_html import sanitize_article_html
 from .time_format import format_article_time
 
 
@@ -172,7 +173,7 @@ SHARED_CSS = r"""
     --border-light: #262c34;
     --text: #e6edf3;
     --text-secondary: #8b949e;
-    --muted: #6e7681;
+    --muted: #8b949e;
     --shadow-sm: 0 1px 2px rgba(0,0,0,.2);
     --shadow: 0 1px 3px rgba(0,0,0,.3), 0 1px 2px rgba(0,0,0,.2);
     --shadow-md: 0 4px 6px rgba(0,0,0,.3), 0 2px 4px rgba(0,0,0,.2);
@@ -342,6 +343,8 @@ main { max-width: 1340px; margin: 0 auto; padding: 24px 24px 48px; }
 }
 .toolbar input:focus, .toolbar select:focus {
   border-color: var(--accent);
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 15%, transparent);
 }
 .match-badge {
@@ -463,6 +466,75 @@ pre {
   margin: 0; white-space: pre-wrap; overflow-wrap: anywhere;
   color: var(--text); font: inherit; font-size: 14px; line-height: 1.8;
 }
+.article-rich {
+  line-height: 1.78;
+  overflow-wrap: anywhere;
+}
+.article-rich > *:first-child { margin-top: 0; }
+.article-rich > *:last-child { margin-bottom: 0; }
+.article-rich p,
+.article-rich ul,
+.article-rich ol,
+.article-rich blockquote,
+.article-rich figure,
+.article-rich table,
+.article-rich pre { margin: 0 0 14px; }
+.article-rich ul,
+.article-rich ol { padding-left: 22px; }
+.article-rich li { margin: 4px 0; }
+.article-rich img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  margin: 12px auto;
+  background: var(--surface-2);
+}
+.article-rich figure { max-width: 100%; }
+.article-rich figcaption {
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+  margin-top: -6px;
+}
+.article-rich blockquote {
+  border-left: 3px solid var(--accent);
+  background: var(--surface-2);
+  padding: 10px 14px;
+  color: var(--text-secondary);
+}
+.article-rich pre {
+  overflow: auto;
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 14px;
+  line-height: 1.55;
+}
+.article-rich code {
+  font-family: ui-monospace, SFMono-Regular, "Cascadia Code", Consolas, monospace;
+  font-size: 12.5px;
+}
+.article-rich :not(pre) > code {
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+.article-rich table {
+  width: 100%;
+  border-collapse: collapse;
+  display: block;
+  overflow-x: auto;
+}
+.article-rich th,
+.article-rich td {
+  border: 1px solid var(--border);
+  padding: 8px 10px;
+  text-align: left;
+}
+.article-rich th { background: var(--surface-2); }
 .json-block {
   max-height: 520px; overflow: auto; background: var(--surface-3);
   border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px;
@@ -490,6 +562,30 @@ pre {
   font-weight: 650; font-size: 13px; transition: background .15s, transform .15s;
 }
 .external-link:hover { background: var(--accent-dark); transform: translateY(-1px); text-decoration: none; }
+.view-toggle {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.view-toggle button {
+  border: 0;
+  border-radius: 4px;
+  padding: 6px 12px;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+.view-toggle button.active {
+  background: var(--surface);
+  color: var(--accent);
+  box-shadow: var(--shadow-sm);
+}
+.article-panel[hidden] { display: none; }
 .tag-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
 
 /* ============================================================
@@ -597,8 +693,8 @@ def render_index(rows: list[sqlite3.Row], title: str) -> str:
         priority = ai.get("priority") or "unknown"
         security_type = ai.get("security_type") or "security_news"
         brief = (
-            ai.get("brief_zh")
-            or ai.get("summary_zh")
+            ai.get("summary_zh")
+            or ai.get("brief_zh")
             or row["summary"]
             or row["content_text"]
             or row["title"]
@@ -706,10 +802,40 @@ def render_article(row: sqlite3.Row, title: str) -> str:
     cves = normalize_list(ai.get("cves"))
     priority = ai.get("priority") or "unknown"
     security_type = ai.get("security_type") or "security_news"
-    brief = ai.get("brief_zh") or ai.get("summary_zh") or row["summary"] or ""
+    brief = ai.get("summary_zh") or ai.get("brief_zh") or row["summary"] or ""
     translation = ai.get("translation_zh") or ""
     key_points = normalize_list(ai.get("key_points"))
     ai_json = json.dumps(ai, ensure_ascii=False, indent=2) if ai else "无"
+    rich_content = sanitize_article_html(row["content_html"] or "", row["url"])
+    if not rich_content:
+        rich_content = f"<pre>{h(row['content_text'] or '无')}</pre>"
+    view_toggle = ""
+    translation_panel = ""
+    view_script = ""
+    if translation:
+        view_toggle = """
+        <div class="view-toggle">
+          <button type="button" class="active" data-view="source">原文</button>
+          <button type="button" data-view="translation">中文译文</button>
+        </div>"""
+        translation_panel = f"""
+      <div id="translationPanel" class="article-panel" hidden>
+        <pre>{h(translation)}</pre>
+      </div>"""
+        view_script = """
+<script>
+const viewButtons = Array.from(document.querySelectorAll('[data-view]'));
+const sourcePanel = document.getElementById('sourcePanel');
+const translationPanel = document.getElementById('translationPanel');
+for (const button of viewButtons) {
+  button.addEventListener('click', () => {
+    const view = button.dataset.view;
+    for (const item of viewButtons) item.classList.toggle('active', item === button);
+    if (sourcePanel) sourcePanel.hidden = view !== 'source';
+    if (translationPanel) translationPanel.hidden = view !== 'translation';
+  });
+}
+</script>"""
 
     if key_points:
         points_html = '<ul class="key-points">' + "".join(
@@ -751,8 +877,11 @@ def render_article(row: sqlite3.Row, title: str) -> str:
       <div class="section-body">{points_html}</div>
     </section>
     <section class="section">
-      <div class="panel-head"><h2>📄 正文</h2></div>
-      <div class="section-body"><pre>{h(translation or row["content_text"] or "无")}</pre></div>
+      <div class="panel-head"><h2>正文内容</h2>{view_toggle}</div>
+      <div class="section-body">
+        <div id="sourcePanel" class="article-panel article-rich">{rich_content}</div>
+        {translation_panel}
+      </div>
     </section>
     <section class="section">
       <div class="panel-head"><h2>🤖 AI 分析结果</h2></div>
@@ -782,6 +911,7 @@ def render_article(row: sqlite3.Row, title: str) -> str:
     </section>
   </aside>
 </main>
+{view_script}
 """
     return base_html(row["title"], body)
 

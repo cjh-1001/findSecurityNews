@@ -11,6 +11,7 @@ import json
 import sqlite3
 
 from .database import Database
+from .rich_html import sanitize_article_html
 from .time_format import format_article_time
 
 
@@ -337,7 +338,7 @@ def base_html(title: str, active: str, body: str) -> str:
         --border-light: #262c34;
         --text: #e6edf3;
         --text-secondary: #8b949e;
-        --muted: #6e7681;
+        --muted: #8b949e;
         --shadow-sm: 0 1px 2px rgba(0,0,0,.2);
         --shadow: 0 1px 3px rgba(0,0,0,.3);
         --accent: #58a6ff;
@@ -416,7 +417,7 @@ def base_html(title: str, active: str, body: str) -> str:
        Stats Cards
        ============================================================ */
     .stats {{
-      display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px;
+      display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px;
       margin-bottom: 14px;
     }}
     .metric {{
@@ -460,6 +461,8 @@ def base_html(title: str, active: str, body: str) -> str:
     }}
     input:focus, select:focus {{
       border-color: var(--accent);
+      outline: 2px solid var(--accent);
+      outline-offset: -1px;
       box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 15%, transparent);
     }}
     .checkbox {{
@@ -546,13 +549,76 @@ def base_html(title: str, active: str, body: str) -> str:
       max-height: 520px; overflow: auto;
       font-size: 13.5px; line-height: 1.7;
     }}
+    .article-rich {{
+      line-height: 1.78;
+      overflow-wrap: anywhere;
+    }}
+    .article-rich > *:first-child {{ margin-top: 0; }}
+    .article-rich > *:last-child {{ margin-bottom: 0; }}
+    .article-rich p,
+    .article-rich ul,
+    .article-rich ol,
+    .article-rich blockquote,
+    .article-rich figure,
+    .article-rich table,
+    .article-rich pre {{ margin: 0 0 14px; }}
+    .article-rich ul,
+    .article-rich ol {{ padding-left: 22px; }}
+    .article-rich img {{
+      display: block;
+      max-width: 100%;
+      height: auto;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      margin: 12px auto;
+      background: var(--surface-2);
+    }}
+    .article-rich figcaption {{
+      color: var(--muted);
+      font-size: 12px;
+      text-align: center;
+      margin-top: -6px;
+    }}
+    .article-rich blockquote {{
+      border-left: 3px solid var(--accent);
+      background: var(--surface-2);
+      padding: 10px 14px;
+      color: var(--text-secondary);
+    }}
+    .article-rich pre {{
+      max-height: none;
+      line-height: 1.55;
+      font-family: ui-monospace, SFMono-Regular, "Cascadia Code", Consolas, monospace;
+      font-size: 12.5px;
+    }}
+    .article-rich :not(pre) > code {{
+      background: var(--surface-3);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-family: ui-monospace, SFMono-Regular, "Cascadia Code", Consolas, monospace;
+      font-size: 12.5px;
+    }}
+    .article-rich table {{
+      width: 100%;
+      border-collapse: collapse;
+      display: block;
+      overflow-x: auto;
+    }}
+    .article-rich th,
+    .article-rich td {{
+      border: 1px solid var(--border);
+      padding: 8px 10px;
+      text-align: left;
+    }}
+    .article-rich th {{ background: var(--surface-2); }}
     .message {{
       padding: 12px 16px; border: 1px solid var(--border);
       border-radius: var(--radius-sm); background: var(--surface); margin-bottom: 14px;
       font-size: 13px;
     }}
     .message.error {{
-      border-color: var(--red-border); background: var(--red-bg); color: #991b1b;
+      border-color: var(--red-border); background: var(--red-bg); color: var(--red);
     }}
     .pager {{ display: flex; justify-content: flex-end; gap: 8px; padding: 14px; }}
 
@@ -722,6 +788,9 @@ def render_article_detail(store: DashboardStore, article_id: int) -> str:
         categories = []
     ai = row_ai(row)
     ai_text = json.dumps(ai, ensure_ascii=False, indent=2) if ai else "无"
+    rich_content = sanitize_article_html(row["content_html"] or "", row["url"])
+    if not rich_content:
+        rich_content = f"<pre>{h(row['content_text'] or '无')}</pre>"
     body = f"""
 <section class="panel">
   <div class="panel-head"><h1>{h(row["title"])}</h1><a class="button secondary" href="/">返回</a></div>
@@ -747,7 +816,7 @@ def render_article_detail(store: DashboardStore, article_id: int) -> str:
 </section>
 <section class="panel">
   <div class="panel-head"><h2>正文</h2></div>
-  <div class="content"><pre>{h(row["content_text"] or "无")}</pre></div>
+  <div class="content"><div class="article-rich">{rich_content}</div></div>
 </section>
 <section class="panel">
   <div class="panel-head"><h2>AI 结果</h2></div>
