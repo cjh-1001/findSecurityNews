@@ -101,6 +101,10 @@ def build_parser() -> argparse.ArgumentParser:
     dedup_cmd = subparsers.add_parser("dedup")
     dedup_cmd.add_argument("--limit", type=int, default=1000)
 
+    dashboard_cmd = subparsers.add_parser("dashboard")
+    dashboard_cmd.add_argument("--host", default="127.0.0.1")
+    dashboard_cmd.add_argument("--port", type=int, default=8000)
+
     feishu_cmd = subparsers.add_parser("push-feishu")
     feishu_cmd.add_argument("--limit", type=int, default=8)
     feishu_cmd.add_argument("--date", default="")
@@ -533,6 +537,10 @@ def main(argv: list[str] | None = None) -> int:
         return digest(args, db)
     if args.command == "dedup":
         return dedup(args, db)
+    if args.command == "dashboard":
+        from .dashboard import run_dashboard
+
+        return run_dashboard(args.db, host=args.host, port=args.port)
     if args.command == "push-feishu":
         return push_feishu(args, db)
     if args.command == "feishu-workflow":

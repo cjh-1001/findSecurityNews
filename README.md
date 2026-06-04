@@ -17,6 +17,7 @@ Security news collection workflow for crawling source feeds, storing articles, a
 py .\run.py init-db
 py .\run.py collect --limit 10 --digest
 py .\run.py list --limit 10
+py .\run.py dashboard
 ```
 
 ## One-Command Setup
@@ -42,6 +43,26 @@ system packages through `apt`, `dnf`, `yum`, `zypper`, or `pacman`.
 Set `ENABLE_AI=true` in `.env` to make scheduled pushes use AI summaries.
 
 AI processing is optional. Without an API key the crawler still works.
+
+## Web Dashboard
+
+Start the local dashboard:
+
+```powershell
+py .\run.py dashboard --host 127.0.0.1 --port 8000
+```
+
+Then open `http://127.0.0.1:8000`.
+
+For a Linux server, bind to an internal address or put it behind an authenticated reverse proxy:
+
+```bash
+python3 run.py dashboard --host 127.0.0.1 --port 8000
+```
+
+The dashboard includes article statistics, source filters, keyword/date search, article detail pages,
+cleanup month buckets, cleanup preview, archive-and-delete, and optional SQLite `VACUUM`.
+Cleanup archives are written to `outputs/archive/` before rows are deleted.
 
 ```powershell
 $env:OPENAI_API_KEY = "your_api_key"
