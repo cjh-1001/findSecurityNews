@@ -1,0 +1,127 @@
+[[sources]]
+name = "security_affairs_security"
+type = "rss"
+url = "https://securityaffairs.com/feed/"
+homepage = "https://securityaffairs.com/"
+language = "en"
+enabled = true
+
+[[sources]]
+name = "group_ib_blog"
+type = "sitemap"
+url = "https://www.group-ib.com/blog_post-sitemap.xml"
+homepage = "https://www.group-ib.com/blog"
+language = "en"
+enabled = true
+
+[[sources]]
+name = "hackernews_cc"
+type = "html_index"
+url = "https://hackernews.cc/"
+homepage = "https://hackernews.cc/"
+language = "zh-CN"
+enabled = true
+
+[[sources]]
+name = "securityonline_info"
+type = "html_index"
+url = "https://securityonline.info/"
+homepage = "https://securityonline.info/"
+language = "en"
+enabled = true
+
+[[sources]]
+name = "malwarebytes_blog"
+type = "rss"
+url = "https://www.malwarebytes.com/blog/feed"
+homepage = "https://www.malwarebytes.com/blog/all-posts"
+language = "en"
+enabled = true
+
+[[sources]]
+name = "cyble_blog"
+type = "rss_html"
+url = "https://cyble.com/blog/feed/"
+homepage = "https://cyble.com/blog/"
+language = "en"
+enabled = true
+
+[[sources]]
+name = "cybersecurity360_news"
+type = "rss_html"
+url = "https://www.cybersecurity360.it/news/feed/"
+homepage = "https://www.cybersecurity360.it/news/"
+language = "it"
+enabled = true
+
+[[sources]]
+name = "krebs_on_security"
+type = "rss"
+url = "https://krebsonsecurity.com/feed/"
+homepage = "https://krebsonsecurity.com/"
+language = "en"
+enabled = true
+
+[[sources]]
+name = "secrss"
+type = "html_index"
+url = "https://www.secrss.com/"
+homepage = "https://www.secrss.com/"
+language = "zh-CN"
+enabled = true
+
+[[sources]]
+name = "xz_aliyun"
+type = "rss"
+url = "https://xz.aliyun.com/feed"
+homepage = "https://xz.aliyun.com/news"
+language = "zh-CN"
+enabled = true
+
+[[sources]]
+name = "anquanke"
+type = "html_index"
+url = "https://www.anquanke.com/news"
+homepage = "https://www.anquanke.com/"
+language = "zh-CN"
+enabled = true
+
+[[sources]]
+name = "t00ls"
+type = "html_index"
+url = "https://www.t00ls.com/articles.html"
+homepage = "https://www.t00ls.com/"
+language = "zh-CN"
+enabled = true
+
+[[sources]]
+name = "sec_wiki"
+type = "rss"
+url = "https://www.sec-wiki.com/news/rss"
+homepage = "https://www.sec-wiki.com/"
+language = "zh-CN"
+enabled = true
+
+[[sources]]
+name = "freebuf"
+type = "rss"
+url = "https://www.freebuf.com/feed"
+homepage = "https://www.freebuf.com/"
+language = "zh-CN"
+enabled = false
+
+[[sources]]
+name = "77169"
+type = "rss_html"
+url = "https://www.77169.net/feed"
+homepage = "https://www.77169.net/"
+language = "zh-CN"
+enabled = true
+
+[[sources]]
+name = "bianews_ai"
+type = "bianews_ai"
+url = "https://www.bianews.com/news/news_list?channel=ai&type=0"
+homepage = "https://www.bianews.com/news/ai"
+language = "zh-CN"
+enabled = true
