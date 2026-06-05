@@ -125,3 +125,21 @@ url = "https://www.bianews.com/news/news_list?channel=ai&type=0"
 homepage = "https://www.bianews.com/news/ai"
 language = "zh-CN"
 enabled = true
+
+# ── WeChat MP sources (via local RSSHub, docker compose up -d first) ──
+
+[[sources]]
+name = "wechat_qianxin_ti"
+type = "rsshub"
+url = "http://127.0.0.1:1200/wechat/mp/profile/gh_166784eae33e"
+homepage = "https://ti.qianxin.com/"
+language = "zh-CN"
+enabled = true
+
+[[sources]]
+name = "wechat_blackorbird"
+type = "rsshub"
+url = "http://127.0.0.1:1200/wechat/mp/profile/blackorbird"
+homepage = "https://mp.weixin.qq.com/"
+language = "zh-CN"
+enabled = true

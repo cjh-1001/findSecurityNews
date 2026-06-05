@@ -1,0 +1,28 @@
+version: "3.8"
+
+# RSSHub — WeChat MP and additional RSS sources
+# Start:  docker compose up -d
+# Stop:   docker compose down
+# Status: docker compose ps
+
+services:
+  rsshub:
+    image: diygod/rsshub:latest
+    container_name: findSecurityNews-rsshub
+    ports:
+      - "127.0.0.1:1200:1200"
+    environment:
+      NODE_ENV: production
+      CACHE_TYPE: memory
+      CACHE_EXPIRE: 600
+      # WeChat MP scraping config (optional cookies for better reliability)
+      # WECHAT_COOKIES: ""
+      # Reduce request rate to avoid IP bans
+      REQUEST_RETRY: 2
+      DEBUG_INFO: false
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:1200/healthz"]
+      interval: 60s
+      timeout: 5s
+      retries: 3

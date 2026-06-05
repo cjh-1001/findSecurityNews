@@ -290,6 +290,8 @@ configure_env() {
     CLEANUP_VACUUM="$(prompt_value CLEANUP_VACUUM 'Run SQLite VACUUM after cleanup? true/false' 'false')"
   fi
   PYTHON_BIN="$(prompt_value PYTHON_BIN 'Python command' "$DEFAULT_PYTHON_BIN" false true)"
+  ENABLE_DASHBOARD="$(prompt_value ENABLE_DASHBOARD 'Enable built-in web dashboard? true/false' 'false')"
+  ENABLE_RSSHUB="$(prompt_value ENABLE_RSSHUB 'Enable RSSHub (for WeChat MP sources)? true/false' 'false')"
 
   umask 077
   : > "$ENV_FILE"
@@ -307,6 +309,8 @@ configure_env() {
   write_env_line CLEANUP_RETENTION_DAYS "$CLEANUP_RETENTION_DAYS"
   write_env_line CLEANUP_VACUUM "$CLEANUP_VACUUM"
   write_env_line PYTHON_BIN "$PYTHON_BIN"
+  write_env_line ENABLE_DASHBOARD "$ENABLE_DASHBOARD"
+  write_env_line ENABLE_RSSHUB "$ENABLE_RSSHUB"
 
   echo "Wrote $ENV_FILE. Secrets are stored locally in plaintext."
 }
@@ -368,6 +372,14 @@ Useful commands:
 
 Dashboard:
   $PYTHON_BIN run.py dashboard --host 127.0.0.1 --port 8000
+  (Set ENABLE_DASHBOARD=true in .env first if you want the web dashboard.)
+
+RSSHub (WeChat MP sources):
+  docker compose up -d     # start RSSHub
+  docker compose down      # stop RSSHub
+  docker compose ps        # check status
+  http://127.0.0.1:1200    # local endpoint
+  (Set ENABLE_RSSHUB=true in .env to check RSSHub health before each workflow run.)
 
 If cron should follow Beijing time, set the server timezone:
   sudo timedatectl set-timezone Asia/Shanghai

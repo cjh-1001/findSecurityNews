@@ -24,39 +24,6 @@ DEFAULT_DB = ROOT / "data" / "security_news.db"
 DEFAULT_DIGEST_DIR = ROOT / "outputs" / "daily"
 DEFAULT_SITE_DIR = ROOT / "outputs" / "site"
 LOCAL_TZ = timezone(timedelta(hours=8), name="Asia/Shanghai")
-SOURCE_LABELS = {
-    "security_affairs_security": "Security Affairs",
-    "group_ib_blog": "Group-IB Blog",
-    "hackernews_cc": "HackerNews.cc",
-    "securityonline_info": "SecurityOnline",
-    "malwarebytes_blog": "Malwarebytes Blog",
-    "cyble_blog": "Cyble Blog",
-    "cybersecurity360_news": "Cybersecurity360",
-    "krebs_on_security": "KrebsOnSecurity",
-    "secrss": "SecRSS 安全内参",
-    "xz_aliyun": "先知社区",
-    "anquanke": "安全客",
-    "t00ls": "T00ls",
-    "sec_wiki": "SecWiki",
-    "freebuf": "FreeBuf",
-    "77169": "77169",
-    "bianews_ai": "Bianews AI",
-}
-SECURITY_TYPE_LABELS = {
-    "security_news": "安全资讯",
-    "vulnerability": "漏洞",
-    "network device vulnerability": "网络设备漏洞",
-    "threat_intelligence": "威胁情报",
-    "ransomware": "勒索软件",
-    "malware": "恶意软件",
-    "incident": "安全事件",
-}
-PRIORITY_LABELS = {
-    "critical": "关键",
-    "high": "高",
-    "medium": "中",
-    "low": "低",
-}
 
 
 def load_env_file(path: Path) -> None:
@@ -164,6 +131,9 @@ def collect(args: argparse.Namespace, db: Database) -> int:
                 xml_text = fetch_text(source.url)
                 rss_articles = parse_rss(source, xml_text, limit=args.limit)
                 articles = fetch_full_articles(source, rss_articles)
+            elif source.type == "rsshub":
+                xml_text = fetch_text(source.url)
+                articles = parse_rss(source, xml_text, limit=args.limit)
             elif source.type == "sitemap":
                 xml_text = fetch_text(source.url)
                 entries = parse_sitemap(source, xml_text, limit=args.limit)
@@ -424,36 +394,15 @@ def build_feishu_text(rows, range_label: str = "") -> str:
     for index, row in enumerate(rows, start=1):
         ai = row_ai(row)
         synopsis = ai.get("summary_zh") or ai.get("brief_zh") or fallback_brief(row)
-        key_points = normalize_list(ai.get("key_points"))
-        cves = normalize_list(ai.get("cves"))
-        tags = normalize_list(ai.get("tags_zh"))
         lines.extend(
             [
                 f"{index}. {row['title']}",
-                f"来源: {source_label(row['source_name'])}",
-                f"发布时间: {format_article_time(row['published_at'])}",
-            ]
-        )
-        if tags:
-            lines.append(f"标签: {'、'.join(tags[:6])}")
-        if ai:
-            meta = []
-            if ai.get("security_type"):
-                meta.append(f"类型: {display_security_type(ai['security_type'])}")
-            if ai.get("priority"):
-                meta.append(f"优先级: {display_priority(ai['priority'])}")
-            if cves:
-                meta.append(f"CVEs: {', '.join(cves[:6])}")
-            if meta:
-                lines.append("；".join(meta))
-        lines.extend(
-            [
+                f"日期: {format_article_time(row['published_at'])}",
                 f"梗概: {truncate(synopsis, 360)}",
+                f"链接: {row['url']}",
+                "",
             ]
         )
-        if key_points:
-            lines.append(f"重点: {truncate('；'.join(key_points[:3]), 260)}")
-        lines.extend([f"链接: {row['url']}", ""])
     return "\n".join(lines).strip()
 
 
@@ -467,30 +416,8 @@ def row_ai(row) -> dict:
     return result if isinstance(result, dict) else {}
 
 
-def normalize_list(value) -> list[str]:
-    if not value:
-        return []
-    if isinstance(value, str):
-        return [value]
-    if isinstance(value, list):
-        return [str(item) for item in value if item]
-    return []
-
-
 def fallback_brief(row) -> str:
     return f"待 AI 优化：{row['title']}"
-
-
-def source_label(source_name: str) -> str:
-    return SOURCE_LABELS.get(source_name, source_name)
-
-
-def display_security_type(value: str) -> str:
-    return SECURITY_TYPE_LABELS.get(value.lower(), value)
-
-
-def display_priority(value: str) -> str:
-    return PRIORITY_LABELS.get(value.lower(), value)
 
 
 def push_feishu(args: argparse.Namespace, db: Database) -> int:
@@ -579,6 +506,13 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "dedup":
         return dedup(args, db)
     if args.command == "dashboard":
+        enable_dashboard = os.getenv("ENABLE_DASHBOARD", "false").strip().lower()
+        if enable_dashboard not in ("1", "true", "yes"):
+            print(
+                "Dashboard is disabled. Set ENABLE_DASHBOARD=true in .env to enable.",
+                file=sys.stderr,
+            )
+            return 1
         from .dashboard import run_dashboard
 
         return run_dashboard(args.db, host=args.host, port=args.port)

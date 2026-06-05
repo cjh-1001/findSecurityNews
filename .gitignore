@@ -17,5 +17,9 @@ data/*.sqlite3
 outputs/
 logs/
 
+# RSSHub (installed via setup script or docker)
+rsshub/
+
+
 .DS_Store
 Thumbs.db

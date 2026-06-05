@@ -1,104 +1,202 @@
 # findSecurityNews
 
-安全资讯采集、AI 摘要、飞书推送、Web 仪表盘和定时清理工具。
+安全资讯采集、AI 全文摘要、飞书/钉钉推送、微信公众号爬取（RSSHub）、Web 仪表盘。
 
 ## 功能概览
 
-- 从 `config/sources.toml` 配置的 RSS / HTML / sitemap 来源采集安全资讯
-- 写入 SQLite：`data/security_news.db`
-- 自动去重，保留重复原因和相似度
-- 可选 AI 分析：中文摘要、中文译文、风险优先级、CVE、标签、关键点
-- 支持飞书机器人推送日报、早报、晚报
-- 支持本地 Web 仪表盘查看、筛选、清理数据
-- 支持导出静态 HTML 站点
-- 支持 Linux cron 定时采集推送和周/月自动归档清理
+- 从 `config/sources.toml` 爬取 18 个来源（RSS / HTML / sitemap / RSSHub 微信）
+- SQLite 存储，自动 URL 去重
+- AI 读全文生成中文摘要（支持 OpenAI / Anthropic 兼容 API）
+- 飞书机器人推送（**精简 4 字段**：标题、日期、摘要、链接）
+- 内置 RSSHub（Docker Compose）抓取微信公众号文章
+- Web 仪表盘（默认关闭，`ENABLE_DASHBOARD=true` 启用）
+- 静态 HTML 站点导出
+- Linux cron 早晚定时采集推送 + 自动归档清理
 
 ## 环境要求
 
-- **Python >= 3.10**（`from __future__ import annotations` 等语法需要）
-- pip / venv
-- cron / crontab（定时推送需要）
+- Python >= 3.10
+- Docker（微信 RSSHub 需要）
+- cron（定时推送需要，可选）
 
-如果系统 Python 版本太低，先安装 Python 3.10+：
-
-```bash
-# Ubuntu / Debian
-sudo apt-get install -y python3.11 python3.11-venv python3.11-pip
-
-# TencentOS / CentOS / RHEL
-sudo dnf install -y python3.11 python3.11-pip python3.11-devel
-
-# 确认版本
-python3.11 --version
-```
-
-## 最快启用：Linux 服务器
-
-首次部署先从 GitHub 拉取项目：
+## 最快启用
 
 ```bash
 git clone https://github.com/cjh-1001/findSecurityNews.git
 cd findSecurityNews
-```
-
-如果服务器上已经有项目目录，更新到最新版本：
-
-```bash
-cd findSecurityNews
-git pull --ff-only
-```
-
-然后执行交互式部署：
-
-```bash
 chmod +x scripts/*.sh
 ./scripts/setup_linux.sh
 ```
 
-交互脚本会完成：
-
-- 检查或安装 Python 3.10+、pip、cron/crontab
-- 创建 `.venv` 虚拟环境
-- 安装 Python 依赖
-- 创建 `.env` 配置文件
-- 初始化数据库
-- 配置飞书 webhook 和可选签名 secret
-- 配置是否启用 AI
-- 配置采集数量、推送数量
-- 配置是否安装 08:00 / 20:00 定时推送
-- 配置是否安装周清或月清数据库任务
-- 可选立即运行一次真实工作流测试
-
-> **注意**：交互脚本会在 `.env` 中写入 `PYTHON_BIN` 指向 `.venv/bin/python`。
-> 后续 `scripts/run_feishu.sh` 等脚本会优先使用 `PYTHON_BIN`，避免用到系统旧版 Python。
-
-建议服务器使用北京时间，避免 cron 触发时间和工作流窗口不一致：
+交互式脚本会引导你完成全部配置。完成后：
 
 ```bash
-sudo timedatectl set-timezone Asia/Shanghai
+# 启动 RSSHub（如果用微信源的话）
+docker compose up -d
+
+# 手动跑一次
+scripts/run_feishu.sh latest
+
+# 查看定时任务
+crontab -l | grep findSecurityNews
+```
+
+## 项目结构
+
+```
+findSecurityNews/
+├── config/sources.toml          # 18 个资讯源配置
+├── docker-compose.yml           # RSSHub 服务
+├── Makefile                     # 常用命令
+├── run.py                       # 入口
+├── src/find_security_news/      # Python 包
+│   ├── cli.py                   # 命令行 + 工作流编排
+│   ├── ai.py                    # AI 分析（读全文 24,000 字）
+│   ├── rss.py                   # RSS/Atom 解析
+│   ├── sitemap.py               # sitemap + HTML 正文提取
+│   ├── database.py              # SQLite 存储 + 去重
+│   ├── dashboard.py             # Web 仪表盘
+│   ├── feishu.py                # 飞书 webhook
+│   ├── dedup.py                 # 近重复检测
+│   ├── dedup.py                 # Markdown 简报
+│   └── static_site.py           # 静态站点导出
+├── scripts/
+│   ├── setup_linux.sh           # 交互式 Linux 部署
+│   ├── deploy.sh                # 一键更新部署
+│   ├── run_feishu.sh            # 飞书工作流（cron 用）
+│   ├── install_cron.sh          # 安装 cron 定时
+│   └── cleanup_data.py          # 数据归档清理
+├── data/security_news.db        # SQLite 数据
+├── outputs/                     # 归档/简报/静态站点
+└── logs/                        # 运行日志
+```
+
+## 配置
+
+`.env` 所有配置：
+
+| 变量 | 说明 | 默认值 |
+|------|------|--------|
+| `FEISHU_WEBHOOK` | 飞书机器人 webhook | 必填 |
+| `FEISHU_SECRET` | 飞书签名密钥 | 可选 |
+| `COLLECT_LIMIT` | 每源每次采集数 | `30` |
+| `PUSH_LIMIT` | 每次推送数 | `20` |
+| `ENABLE_AI` | 启用 AI 分析 | `false` |
+| `AI_PROVIDER` | `openai` / `anthropic` | `openai` |
+| `OPENAI_BASE_URL` | API 地址 | `https://api.openai.com/v1` |
+| `OPENAI_API_KEY` | API key | 必填（AI 开启时） |
+| `OPENAI_MODEL` | 模型名 | `gpt-4.1-mini` |
+| `AI_MAX_TOKENS` | 最大输出 token | `8192` |
+| `ENABLE_DASHBOARD` | 启用 Web 仪表盘 | `false` |
+| `ENABLE_RSSHUB` | 工作流前检查 RSSHub 健康 | `false` |
+| `CLEANUP_SCHEDULE` | `weekly` / `monthly` / `none` | `weekly` |
+| `CLEANUP_RETENTION_DAYS` | 保留天数 | `30` |
+| `CLEANUP_VACUUM` | 清理后 VACUUM | `false` |
+
+## 微信公众号爬取
+
+通过内置 RSSHub 抓取。当前配置了两个安全公众号：
+
+| 源名 | 公众号 | 微信号 |
+|------|--------|--------|
+| `wechat_qianxin_ti` | 奇安信威胁情报中心 | `gh_166784eae33e` |
+| `wechat_blackorbird` | 黑鸟 | `blackorbird` |
+
+### 添加更多公众号
+
+1. 找到公众号的微信号（搜狗微信搜索 `weixin.sogou.com`）
+2. 在 `config/sources.toml` 添加：
+
+```toml
+[[sources]]
+name = "wechat_你的名字"
+type = "rsshub"
+url = "http://127.0.0.1:1200/wechat/mp/profile/微信号"
+homepage = "https://mp.weixin.qq.com/"
+language = "zh-CN"
+enabled = true
+```
+
+3. 重启 RSSHub：`docker compose restart rsshub`
+
+> **注意**：微信源用 `type = "rsshub"`，不会去爬 `mp.weixin.qq.com`（有反爬），
+> 而是直接用 RSSHub 提供的全文内容。
+
+## 推送格式
+
+飞书推送每条消息 4 个字段：
+
+```
+安全资讯简报
+时间窗口: 2026-06-05 08:00 - 2026-06-05 20:00
+
+1. CVE-2026-XXXX 漏洞分析报告
+日期: 2026-06-05 14:30
+梗概: 该报告详细分析了影响主流防火墙的远程代码执行漏洞...
+链接: https://example.com/article
+```
+
+## 手动运行
+
+```bash
+# 采集
+python3 run.py collect --limit 30 --ai
+
+# 推送
+python3 run.py push-feishu --window morning --limit 20
+
+# 采集+推送（推荐）
+python3 run.py feishu-workflow --window day --ai
+
+# AI 补处理未分析文章
+python3 run.py process-ai --limit 100
+
+# 仪表盘
+ENABLE_DASHBOARD=true python3 run.py dashboard --port 8000
+
+# 静态站点
+python3 run.py export-html --limit 300
+```
+
+时间窗口（Asia/Shanghai）：
+
+| 窗口 | 范围 |
+|------|------|
+| `morning` | 前一天 20:00 ~ 当天 08:00 |
+| `evening` | 当天 08:00 ~ 20:00 |
+| `day` | 当天 00:00 ~ 24:00 |
+| `latest` | 全部 |
+
+## Makefile 常用命令
+
+```bash
+make deploy      # 一键部署
+make start       # 启动 RSSHub
+make stop        # 停止 RSSHub
+make status      # 查看服务状态
+make collect     # 采集（含 AI）
+make push-am     # 推送早报
+make push-pm     # 推送晚报
+make dashboard   # 启动仪表盘
+make clean       # 清理 outputs/
+```
+
+## 定时任务
+
+```bash
+# 安装早晚推送 (08:00 + 20:00)
+scripts/install_cron.sh
+
+# 安装清理
+scripts/install_cleanup_cron.sh weekly  # 周清
+scripts/install_cleanup_cron.sh monthly # 月清
 ```
 
 ## 国内服务器部署
 
-如果服务器在国内（阿里云、腾讯云等），部分国外安全资讯站点可能无法访问或非常慢，采集时会卡住。
-
-建议编辑 `config/sources.toml`，将以下来源的 `enabled = true` 改为 `enabled = false`：
-
-| 来源 | 域名 | 原因 |
-|------|------|------|
-| `group_ib_blog` | group-ib.com | 俄罗斯站点，国内基本无法访问 |
-| `security_affairs_security` | securityaffairs.com | 国外站点，速度极慢 |
-| `securityonline_info` | securityonline.info | 国外站点 |
-| `malwarebytes_blog` | malwarebytes.com | 国外站点 |
-| `cyble_blog` | cyble.com | 国外站点 |
-| `cybersecurity360_news` | cybersecurity360.it | 意大利站点 |
-| `krebs_on_security` | krebsonsecurity.com | 国外站点 |
-
-用 sed 一键禁用：
+国内服务器访问国外安全站点可能很慢。建议在 `config/sources.toml` 中禁用：
 
 ```bash
-cd findSecurityNews
-cp config/sources.toml config/sources.toml.bak
 sed -i \
   -e '/name = "group_ib_blog"/{n;s/enabled = true/enabled = false/}' \
   -e '/name = "security_affairs_security"/{n;s/enabled = true/enabled = false/}' \
@@ -110,395 +208,44 @@ sed -i \
   config/sources.toml
 ```
 
-以下国内可正常访问的来源会继续生效：
-
-- 安全内参 (`secrss.com`)
-- 先知社区 (`xz.aliyun.com`)
-- 安全客 (`anquanke.com`)
-- T00ls (`t00ls.com`)
-- SecWiki (`sec-wiki.com`)
-- 77169 (`77169.net`)
-- Bianews AI (`bianews.com`)
-- HackerNews.cc (`hackernews.cc`)
-
-## 部署后验证
-
-查看定时任务：
-
-```bash
-crontab -l | grep findSecurityNews
-```
-
-如果输出为空，说明 cron 没有装上，单独运行安装脚本：
-
-```bash
-scripts/install_cron.sh
-scripts/install_cleanup_cron.sh weekly
-crontab -l | grep findSecurityNews   # 再次确认
-```
-
-手动跑一次最新采集和推送：
-
-```bash
-scripts/run_feishu.sh latest
-```
-
-按当天窗口采集和推送：
-
-```bash
-scripts/run_feishu.sh day
-```
-
-手动跑早报 / 晚报窗口：
-
-```bash
-scripts/run_feishu.sh morning
-scripts/run_feishu.sh evening
-```
-
-查看日志：
-
-```bash
-tail -f logs/feishu.log
-tail -f logs/cleanup.log
-```
-
-## 核心配置
-
-部署脚本会生成 `.env`。也可以复制 `.env.example` 手动配置：
-
-```bash
-cp .env.example .env
-nano .env
-```
-
-常用配置：
-
-```bash
-FEISHU_WEBHOOK=https://open.feishu.cn/open-apis/bot/v2/hook/replace-me
-FEISHU_SECRET=replace-me
-
-COLLECT_LIMIT=30
-PUSH_LIMIT=20
-PYTHON_BIN=/path/to/findSecurityNews/.venv/bin/python
-
-ENABLE_AI=false
-AI_PROVIDER=openai
-OPENAI_BASE_URL=https://api.openai.com/v1
-OPENAI_API_KEY=replace-me
-OPENAI_MODEL=gpt-4.1-mini
-AI_MAX_TOKENS=8192
-
-CLEANUP_SCHEDULE=weekly
-CLEANUP_RETENTION_DAYS=30
-CLEANUP_VACUUM=false
-```
-
-配置说明：
-
-| 配置 | 作用 |
-| --- | --- |
-| `FEISHU_WEBHOOK` | 飞书群机器人 webhook，推送功能必填 |
-| `FEISHU_SECRET` | 飞书机器人签名密钥，开启签名校验时填写 |
-| `COLLECT_LIMIT` | 每个来源每次采集数量 |
-| `PUSH_LIMIT` | 每次推送最多发送多少篇 |
-| `PYTHON_BIN` | Python 解释器路径，应指向 `.venv/bin/python`，确保使用 3.10+ 版本 |
-| `ENABLE_AI` | 定时工作流是否启用 AI 分析 |
-| `OPENAI_BASE_URL` | OpenAI 或兼容网关地址 |
-| `OPENAI_API_KEY` | AI API key |
-| `OPENAI_MODEL` | AI 模型名 |
-| `CLEANUP_SCHEDULE` | `weekly`、`monthly` 或 `none` |
-| `CLEANUP_RETENTION_DAYS` | 保留最近多少天数据，旧数据归档后删除 |
-| `CLEANUP_VACUUM` | 清理后是否执行 SQLite `VACUUM` |
-
-## 手动运行
-
-初始化数据库：
-
-```bash
-python3 run.py init-db
-```
-
-采集最新资讯：
-
-```bash
-python3 run.py collect --limit 30
-```
-
-采集并执行 AI 分析：
-
-```bash
-python3 run.py collect --limit 30 --ai
-```
-
-列出最新文章：
-
-```bash
-python3 run.py list --limit 10
-```
-
-生成 Markdown 简报：
-
-```bash
-python3 run.py digest --limit 20
-```
-
-## 飞书推送
-
-只推送数据库里的最新文章：
-
-```bash
-python3 run.py push-feishu --limit 8
-```
-
-采集、可选 AI、再推送，推荐用于定时任务：
-
-```bash
-python3 run.py feishu-workflow --window latest --collect-limit 30 --push-limit 20
-python3 run.py feishu-workflow --window day --collect-limit 30 --push-limit 20
-python3 run.py feishu-workflow --window morning --collect-limit 30 --push-limit 20
-python3 run.py feishu-workflow --window evening --collect-limit 30 --push-limit 20 --ai
-```
-
-时间窗口按 `Asia/Shanghai` 计算：
-
-- `latest`：最新文章，不按日期过滤
-- `day`：当天 00:00 到 24:00
-- `morning`：前一天 20:00 到当天 08:00
-- `evening`：当天 08:00 到当天 20:00
-
-指定日期：
-
-```bash
-python3 run.py push-feishu --window day --date 2026-06-05
-python3 run.py feishu-workflow --window evening --date 2026-06-05 --ai
-```
-
-## 定时任务
-
-安装早晚两次飞书工作流：
-
-```bash
-scripts/install_cron.sh
-```
-
-默认 cron：
-
-```cron
-0 8 * * *  scripts/feishu_morning.sh
-0 20 * * * scripts/feishu_evening.sh
-```
-
-> **提示**：如果 `setup_linux.sh` 交互部署时跳过了定时任务配置，可以随时单独运行
-> `scripts/install_cron.sh` 来补装。安装后执行 `crontab -l | grep findSecurityNews` 验证。
-
-手动安装数据库自动清理：
-
-```bash
-# 每周日 03:30 清理
-scripts/install_cleanup_cron.sh weekly
-
-# 每月 1 日 03:30 清理
-scripts/install_cleanup_cron.sh monthly
-
-# 移除自动清理
-scripts/install_cleanup_cron.sh none
-```
-
-## Web 仪表盘
-
-启动仪表盘：
-
-```bash
-python3 run.py dashboard --host 127.0.0.1 --port 8000
-```
-
-打开：
-
-```text
-http://127.0.0.1:8000
-```
-
-仪表盘支持：
-
-- 文章总览、今日/近 7 天统计、AI 覆盖率、风险分布、来源分布
-- 关键词、来源、日期、重复记录筛选
-- 文章详情、原文 HTML 渲染、AI 结果查看
-- 数据清理预览、归档、删除、可选 `VACUUM`
-
-如果部署到公网服务器，建议绑定内网地址或放在带认证的反向代理后面。
-
-## 静态 HTML 站点
-
-生成可直接部署的静态站点：
-
-```bash
-python3 run.py collect --limit 30 --ai
-python3 run.py export-html --limit 300 --output-dir outputs/site --title "安全资讯"
-```
-
-打开：
-
-```text
-outputs/site/index.html
-```
-
-每篇文章会生成到：
-
-```text
-outputs/site/articles/
-```
-
-## 数据清理
-
-交互式清理：
-
-```bash
-python3 scripts/cleanup_data.py
-```
-
-预览清理，不改数据库：
-
-```bash
-python3 scripts/cleanup_data.py --before 2026-06-01 --dry-run
-```
-
-归档并删除指定日期之前的数据：
-
-```bash
-python3 scripts/cleanup_data.py --before 2026-06-01 --yes
-```
-
-归档并删除指定范围：
-
-```bash
-python3 scripts/cleanup_data.py --from-date 2026-05-01 --to-date 2026-06-01 --yes
-```
-
-自动清理脚本：
-
-```bash
-scripts/run_cleanup.sh
-```
-
-清理前会写 JSONL 归档到：
-
-```text
-outputs/archive/
-```
-
-## Windows 快速运行
-
-PowerShell：
-
-```powershell
-py .\run.py init-db
-py .\run.py collect --limit 30
-py .\run.py list --limit 10
-py .\run.py dashboard
-```
-
-Windows 一键初始化：
-
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\setup_windows.ps1
-```
-
-创建 `.env`：
-
-```powershell
-Copy-Item .env.example .env
-notepad .env
-```
-
-安装 Windows 定时任务：
-
-```powershell
-.\scripts\install_windows_tasks.ps1
-```
-
-## 添加来源
-
-编辑 `config/sources.toml`：
-
-```toml
-[[sources]]
-name = "security_affairs_security"
-type = "rss"
-url = "https://securityaffairs.com/category/security/feed"
-homepage = "https://securityaffairs.com/category/security"
-language = "en"
-enabled = true
-```
-
-支持的来源类型取决于采集器实现，目前项目里已经包含 RSS、HTML 索引、sitemap 和部分站点专用解析逻辑。
-
 ## 常见问题
 
-### 飞书没有收到消息
+### 飞书没收到消息
 
 ```bash
-tail -n 100 logs/feishu.log
+tail -100 logs/feishu.log
 python3 run.py push-feishu --limit 3
 ```
 
-### cron 定时任务没有执行
+### cron 没执行
 
 ```bash
-# 先确认 cron 是否装上了
-crontab -l | grep findSecurityNews
-
-# 如果为空，补装
-scripts/install_cron.sh
-scripts/install_cleanup_cron.sh weekly
-
-# 确认 cron 服务在运行
-systemctl status cron   # 或 systemctl status crond
-
-# 确认时区
-date
-timedatectl
-sudo timedatectl set-timezone Asia/Shanghai
+crontab -l | grep findSecurityNews       # 确认任务存在
+systemctl status cron                    # 确认 cron 在跑
+sudo timedatectl set-timezone Asia/Shanghai  # 设对时区
 ```
 
-### 采集时卡住不动
+### Python SyntaxError
 
-通常是某个国外来源网络不通。终端被卡住的进程（`Ctrl+C`），然后禁用该来源：
+说明 Python < 3.10。重建虚拟环境：
 
 ```bash
-# 查看是哪个来源卡住了，在 config/sources.toml 里将其 enabled 设为 false
-vi config/sources.toml
-
-# 或参考上文"国内服务器部署"章节，批量禁用国外来源
-```
-
-### Python 报 SyntaxError
-
-```text
-SyntaxError: future feature annotations is not defined
-```
-
-说明当前 Python 版本太旧（< 3.7，项目要求 >= 3.10）。解决方法：
-
-```bash
-# 确认当前版本
-python3 --version
-
-# 检查 .env 里的 PYTHON_BIN
-grep PYTHON_BIN .env
-
-# 如果 PYTHON_BIN 指向了旧版本 Python，改为指向 .venv 或新安装的 Python 3.11
-echo "PYTHON_BIN=$(pwd)/.venv/bin/python" >> .env
-
-# 如果没有 .venv，重建虚拟环境
 python3.11 -m venv .venv
 .venv/bin/pip install -e .
+echo "PYTHON_BIN=$(pwd)/.venv/bin/python" >> .env
 ```
 
-### 清理任务没有执行
+### 采集卡住
+
+通常是国外源网络不通。Ctrl+C 后禁用对应源即可。
+
+### 微信源没数据
 
 ```bash
-crontab -l | grep cleanup
-tail -n 100 logs/cleanup.log
-scripts/run_cleanup.sh
+# 确认 RSSHub 在跑
+docker compose ps
+curl http://127.0.0.1:1200/healthz
+
+# 手动测一下微信源
+curl http://127.0.0.1:1200/wechat/mp/profile/blackorbird
 ```
