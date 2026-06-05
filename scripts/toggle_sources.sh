@@ -6,53 +6,46 @@ set -euo pipefail
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$PROJECT_DIR"
 
-CONFIG="$PROJECT_DIR/config/sources.toml"
-
-# 国外源列表
-FOREIGN_SOURCES=(
-  "security_affairs_security"
-  "group_ib_blog"
-  "securityonline_info"
-  "malwarebytes_blog"
-  "cyble_blog"
-  "cybersecurity360_news"
-  "krebs_on_security"
-)
-
 ACTION="${1:-}"
 
-if [[ "$ACTION" == "on" ]]; then
-  TARGET="true"
-  REPLACE="false"
-  echo "启用国外源..."
-elif [[ "$ACTION" == "off" ]]; then
-  TARGET="false"
-  REPLACE="true"
-  echo "禁用国外源..."
-else
+if [[ "$ACTION" != "on" && "$ACTION" != "off" ]]; then
   echo "用法: $0 [on|off]" >&2
-  echo "  on  — 启用国外源" >&2
-  echo "  off — 禁用国外源" >&2
   exit 1
 fi
 
-cp "$CONFIG" "${CONFIG}.bak"
+PYTHON="${PYTHON_BIN:-python3}"
 
-for name in "${FOREIGN_SOURCES[@]}"; do
-  python3 -c "
-import re, sys
-c = open('$CONFIG').read()
-pattern = rf'\[\[sources\]\]\nname = \"{name}\"(.*?)enabled = ){REPLACE}'
-result, n = re.subn(pattern, rf'\1{TARGET}', c, flags=re.DOTALL)
-if n > 0:
-    open('$CONFIG','w').write(result)
-    print(f'  {name} → {TARGET}')
-else:
-    print(f'  {name}: 未找到或已是目标状态')
-"
-done
+"$PYTHON" - "$ACTION" "$PROJECT_DIR/config/sources.toml" <<'PYEOF'
+import sys, re
 
-echo ""
-echo "备份: ${CONFIG}.bak"
-echo "当前国外源状态:"
-grep -A5 'security_affairs' "$CONFIG" | grep enabled
+action = sys.argv[1]    # on or off
+config = sys.argv[2]
+
+target = "true" if action == "on" else "false"
+current = "false" if action == "on" else "true"
+
+FOREIGN = [
+    "security_affairs_security",
+    "group_ib_blog",
+    "securityonline_info",
+    "malwarebytes_blog",
+    "cyble_blog",
+    "cybersecurity360_news",
+    "krebs_on_security",
+]
+
+text = open(config).read()
+
+for name in FOREIGN:
+    # Match: [[sources]]\nname = "name"\n...whatever...\nenabled = current
+    pattern = rf'(\[\[sources\]\]\nname = "{name}".*?enabled = ){current}'
+    new_text, n = re.subn(pattern, rf'\1{target}', text, flags=re.DOTALL)
+    if n > 0:
+        text = new_text
+        print(f"  {name} -> {target}")
+    else:
+        print(f"  {name}: already {target}")
+
+open(config, "w").write(text)
+print(f"\nDone. Foreign sources {'enabled' if action == 'on' else 'disabled'}.")
+PYEOF
