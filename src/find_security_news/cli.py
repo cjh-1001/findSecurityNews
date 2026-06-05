@@ -208,8 +208,10 @@ def collect(args: argparse.Namespace, db: Database) -> int:
             inserted += int(is_new and not is_duplicate)
             duplicates += int(is_duplicate)
             if args.ai and not is_duplicate:
+                print(f"  AI analyzing: {article.title[:60]}...", flush=True)
                 result = ai.analyze(article.title, article.content_text, article.categories)
                 db.save_ai_result(article_id, ai.model if ai.enabled else "heuristic", result)
+                print(f"  AI done.", flush=True)
         print(f"Parsed {len(articles)} articles from {source.name}")
 
     print(
