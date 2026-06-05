@@ -112,10 +112,23 @@ install_python_for_dnf() {
   return 1
 }
 
+# Preemptively disable EPEL repos — their metalinks are often unreachable
+fix_broken_repos() {
+  if command_exists dnf; then
+    say "Disabling EPEL repos (often unreachable)"
+    for repo in epel epel-modular epel-testing epel-testing-modular; do
+      run_as_root dnf config-manager --set-disabled "$repo" 2>/dev/null || true
+    done
+    # Also clear stale metadata cache to prevent dnf from trying to refresh EPEL
+    run_as_root dnf clean metadata 2>/dev/null || true
+  fi
+}
+
 ensure_system_dependencies() {
   local package_manager
   local python_bin
   package_manager="$(detect_package_manager)"
+  fix_broken_repos
   python_bin="$(find_python)"
 
   if [[ -z "$python_bin" ]]; then
