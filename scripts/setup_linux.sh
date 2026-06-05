@@ -72,7 +72,7 @@ install_packages() {
       ;;
     dnf|yum)
       # Only use core repos — skips broken third-party repos (EPEL etc.)
-      if run_as_root "$package_manager" install -y --disablerepo="*" --enablerepo="BaseOS,AppStream,crb,powertools" "$@" 2>&1; then
+      if run_as_root "$package_manager" install -y --disablerepo="*" --enablerepo="BaseOS,AppStream" "$@" 2>&1; then
         return 0
       fi
       # Fallback: allow all repos
@@ -94,7 +94,7 @@ install_packages() {
 # Try installing Python 3.10+ for old distros that ship older Python
 install_python_for_dnf() {
   # Disable ALL repos, then enable only core ones — bypasses broken EPEL
-  local core_repos="BaseOS,AppStream,crb,powertools"
+  local core_repos="BaseOS,AppStream"
   local candidates=("python3.11" "python3.12" "python3.10" "python3")
   for pkg in "${candidates[@]}"; do
     say "Trying: $pkg (core repos only)"
