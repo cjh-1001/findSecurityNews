@@ -63,6 +63,7 @@ class Database:
 
     def init(self) -> None:
         with self.connect() as connection:
+            connection.execute("PRAGMA journal_mode=WAL")
             connection.executescript(SCHEMA)
             self._ensure_article_columns(connection)
 

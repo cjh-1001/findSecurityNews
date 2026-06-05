@@ -1,9 +1,11 @@
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 import argparse
 from datetime import date, datetime, time, timedelta, timezone
 import json
 import os
 import sys
+import threading
 from time import sleep
 
 from .ai import AIProcessor
@@ -107,6 +109,82 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _fetch_source(source, limit: int) -> tuple[object, list]:
+    """Fetch articles from one source. Returns (source, articles)."""
+    articles: list = []
+    if source.type == "rss":
+        xml_text = fetch_text(source.url)
+        rss_articles = parse_rss(source, xml_text, limit=limit)
+        articles = fetch_full_articles(source, rss_articles)
+    elif source.type == "rss_html":
+        xml_text = fetch_text(source.url)
+        rss_articles = parse_rss(source, xml_text, limit=limit)
+        articles = fetch_full_articles(source, rss_articles)
+    elif source.type == "rsshub":
+        xml_text = fetch_text(source.url)
+        articles = parse_rss(source, xml_text, limit=limit)
+    elif source.type == "sitemap":
+        xml_text = fetch_text(source.url)
+        entries = parse_sitemap(source, xml_text, limit=limit)
+        for index, entry in enumerate(entries, start=1):
+            print(f"  [{source.name}] Fetching article {index}/{len(entries)}: {entry.url}", flush=True)
+            try:
+                html = fetch_text(entry.url, timeout=30, retries=1)
+            except RuntimeError as exc:
+                print(f"  [{source.name}] Skipping: {entry.url} ({exc})", file=sys.stderr, flush=True)
+                continue
+            article = article_from_html(source, entry.url, html, published_at=entry.lastmod)
+            if article.url and article.title:
+                articles.append(article)
+            if index < len(entries):
+                sleep(1)
+    elif source.type == "html_index":
+        html = fetch_text(source.url)
+        entries = parse_html_index(source, html, limit=limit)
+        for index, entry in enumerate(entries, start=1):
+            print(f"  [{source.name}] Fetching article {index}/{len(entries)}: {entry.url}", flush=True)
+            try:
+                article_html = fetch_text(entry.url, timeout=30, retries=1)
+            except RuntimeError as exc:
+                print(f"  [{source.name}] Skipping: {entry.url} ({exc})", file=sys.stderr, flush=True)
+                continue
+            article = article_from_html(source, entry.url, article_html, published_at=entry.lastmod)
+            if article.url and article.title:
+                articles.append(article)
+            if index < len(entries):
+                sleep(1)
+    elif source.type == "bianews_ai":
+        list_html = post_text(
+            source.url,
+            data={"page_no": 1, "page_size": limit},
+            referer=source.homepage,
+        )
+        entries = parse_bianews_index(source, list_html, limit=limit)
+        for index, entry in enumerate(entries, start=1):
+            print(f"  [{source.name}] Fetching article {index}/{len(entries)}: {entry.url}", flush=True)
+            try:
+                article_html = fetch_text(entry.url, timeout=30, retries=1)
+            except RuntimeError as exc:
+                print(f"  [{source.name}] Skipping: {entry.url} ({exc})", file=sys.stderr, flush=True)
+                continue
+            article = article_from_html(source, entry.url, article_html, published_at=entry.lastmod)
+            article = article.__class__(
+                **{
+                    **article.__dict__,
+                    "title": article.title or entry.title,
+                    "summary": article.summary or entry.summary,
+                    "categories": article.categories or entry.categories,
+                }
+            )
+            if article.url and article.title:
+                articles.append(article)
+            if index < len(entries):
+                sleep(1)
+    else:
+        print(f"[{source.name}] Skipping unsupported source type: {source.type}", file=sys.stderr, flush=True)
+    return source, articles
+
+
 def collect(args: argparse.Namespace, db: Database) -> int:
     sources = load_sources(args.config)
     if args.source:
@@ -116,107 +194,74 @@ def collect(args: argparse.Namespace, db: Database) -> int:
         return 1
 
     ai = AIProcessor()
+
+    # ── Phase 1: Fetch all sources concurrently ──
+    print(f"Fetching {len(sources)} sources in parallel (max 5) ...", flush=True)
+    all_articles: list[tuple] = []  # (source, article)
+    failed_sources = 0
+
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        futures = {executor.submit(_fetch_source, s, args.limit): s for s in sources}
+        for future in as_completed(futures):
+            source = futures[future]
+            try:
+                src, articles = future.result()
+                all_articles.extend((src, a) for a in articles)
+                print(f"[{src.name}] Done: {len(articles)} articles", flush=True)
+            except RuntimeError as exc:
+                failed_sources += 1
+                print(f"[{source.name}] Skipping source fetch failure: {exc}", file=sys.stderr, flush=True)
+
+    # ── Phase 2: Store in DB ──
+    print(f"\nStoring {len(all_articles)} articles ...", flush=True)
     collected = 0
     inserted = 0
     duplicates = 0
-    failed_sources = 0
-    for source in sources:
-        print(f"Fetching {source.name}: {source.url}")
-        try:
-            if source.type == "rss":
-                xml_text = fetch_text(source.url)
-                rss_articles = parse_rss(source, xml_text, limit=args.limit)
-                articles = fetch_full_articles(source, rss_articles)
-            elif source.type == "rss_html":
-                xml_text = fetch_text(source.url)
-                rss_articles = parse_rss(source, xml_text, limit=args.limit)
-                articles = fetch_full_articles(source, rss_articles)
-            elif source.type == "rsshub":
-                xml_text = fetch_text(source.url)
-                articles = parse_rss(source, xml_text, limit=args.limit)
-            elif source.type == "sitemap":
-                xml_text = fetch_text(source.url)
-                entries = parse_sitemap(source, xml_text, limit=args.limit)
-                articles = []
-                for index, entry in enumerate(entries, start=1):
-                    print(f"Fetching article {index}/{len(entries)}: {entry.url}")
-                    try:
-                        html = fetch_text(entry.url, timeout=30, retries=1)
-                    except RuntimeError as exc:
-                        print(f"Skipping article fetch failure: {entry.url} ({exc})", file=sys.stderr)
-                        continue
-                    article = article_from_html(source, entry.url, html, published_at=entry.lastmod)
-                    if article.url and article.title:
-                        articles.append(article)
-                    if index < len(entries):
-                        sleep(1)
-            elif source.type == "html_index":
-                html = fetch_text(source.url)
-                entries = parse_html_index(source, html, limit=args.limit)
-                articles = []
-                for index, entry in enumerate(entries, start=1):
-                    print(f"Fetching article {index}/{len(entries)}: {entry.url}")
-                    try:
-                        article_html = fetch_text(entry.url, timeout=30, retries=1)
-                    except RuntimeError as exc:
-                        print(f"Skipping article fetch failure: {entry.url} ({exc})", file=sys.stderr)
-                        continue
-                    article = article_from_html(source, entry.url, article_html, published_at=entry.lastmod)
-                    if article.url and article.title:
-                        articles.append(article)
-                    if index < len(entries):
-                        sleep(1)
-            elif source.type == "bianews_ai":
-                list_html = post_text(
-                    source.url,
-                    data={"page_no": 1, "page_size": args.limit},
-                    referer=source.homepage,
-                )
-                entries = parse_bianews_index(source, list_html, limit=args.limit)
-                articles = []
-                for index, entry in enumerate(entries, start=1):
-                    print(f"Fetching article {index}/{len(entries)}: {entry.url}")
-                    try:
-                        article_html = fetch_text(entry.url, timeout=30, retries=1)
-                    except RuntimeError as exc:
-                        print(f"Skipping article fetch failure: {entry.url} ({exc})", file=sys.stderr)
-                        continue
-                    article = article_from_html(source, entry.url, article_html, published_at=entry.lastmod)
-                    article = article.__class__(
-                        **{
-                            **article.__dict__,
-                            "title": article.title or entry.title,
-                            "summary": article.summary or entry.summary,
-                            "categories": article.categories or entry.categories,
-                        }
-                    )
-                    if article.url and article.title:
-                        articles.append(article)
-                    if index < len(entries):
-                        sleep(1)
-            else:
-                print(f"Skipping unsupported source type: {source.name} ({source.type})")
-                continue
-        except RuntimeError as exc:
-            failed_sources += 1
-            print(f"Skipping source fetch failure: {source.name} ({exc})", file=sys.stderr)
-            continue
+    articles_for_ai: list[tuple[int, object]] = []  # (article_id, article)
 
-        for article in articles:
-            article_id, is_new, is_duplicate = db.upsert_article(article)
-            collected += 1
-            inserted += int(is_new and not is_duplicate)
-            duplicates += int(is_duplicate)
-            if args.ai and not is_duplicate:
-                print(f"  AI analyzing: {article.title[:60]}...", flush=True)
-                result = ai.analyze(article.title, article.content_text, article.categories)
-                db.save_ai_result(article_id, ai.model if ai.enabled else "heuristic", result)
-                print(f"  AI done.", flush=True)
-        print(f"Parsed {len(articles)} articles from {source.name}")
+    for src, article in all_articles:
+        article_id, is_new, is_duplicate = db.upsert_article(article)
+        collected += 1
+        inserted += int(is_new and not is_duplicate)
+        duplicates += int(is_duplicate)
+        if args.ai and not is_duplicate:
+            articles_for_ai.append((article_id, article))
 
     print(
-        f"Collected {collected} articles, inserted {inserted} new unique records, "
-        f"duplicates {duplicates}."
+        f"Stored {collected} articles, {inserted} new unique, {duplicates} duplicates.",
+        flush=True,
+    )
+
+    # ── Phase 3: AI analyze concurrently ──
+    if articles_for_ai:
+        print(f"\nAI analyzing {len(articles_for_ai)} articles in parallel (max 3) ...", flush=True)
+        ai_total = len(articles_for_ai)
+        ai_done = [0]
+        ai_lock = threading.Lock()
+
+        def analyze_one(article_id, article):
+            print(f"  AI: {article.title[:60]}...", flush=True)
+            result = ai.analyze(article.title, article.content_text, article.categories)
+            db.save_ai_result(article_id, ai.model if ai.enabled else "heuristic", result)
+            with ai_lock:
+                ai_done[0] += 1
+            print(f"  AI done ({ai_done[0]}/{ai_total}): {article.title[:50]}", flush=True)
+            return result
+
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            futures = [
+                executor.submit(analyze_one, aid, a) for aid, a in articles_for_ai
+            ]
+            for future in as_completed(futures):
+                try:
+                    future.result()
+                except Exception as exc:
+                    print(f"  AI error: {exc}", file=sys.stderr, flush=True)
+
+    print(
+        f"\nDone: {len(sources)} sources, {collected} articles, "
+        f"{inserted} new, {duplicates} duplicates.",
+        flush=True,
     )
     if args.digest:
         path = write_digest(db.list_articles(limit=args.limit), DEFAULT_DIGEST_DIR)
