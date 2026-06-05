@@ -58,6 +58,7 @@ ARGS+=("$@")
 
 # ── 运行 ──
 PYTHON="${PYTHON_BIN:-python3}"
+export PYTHONUNBUFFERED=1
 log "执行: $PYTHON ${ARGS[*]}"
 
 if "$PYTHON" "${ARGS[@]}" 2>&1 | tee -a "$LOG_FILE"; then
