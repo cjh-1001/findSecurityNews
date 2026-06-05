@@ -15,10 +15,23 @@
 
 ## 最快启用：Linux 服务器
 
-把项目复制到服务器后执行：
+首次部署先从 GitHub 拉取项目：
+
+```bash
+git clone https://github.com/cjh-1001/findSecurityNews.git
+cd findSecurityNews
+```
+
+如果服务器上已经有项目目录，更新到最新版本：
 
 ```bash
 cd findSecurityNews
+git pull --ff-only
+```
+
+然后执行交互式部署：
+
+```bash
 chmod +x scripts/*.sh
 ./scripts/setup_linux.sh
 ```
