@@ -71,10 +71,12 @@ install_packages() {
       run_as_root apt-get install -y "$@"
       ;;
     dnf|yum)
-      # Try without EPEL first (Chinese servers often can't reach EPEL mirrors)
-      run_as_root "$package_manager" install -y --disablerepo=epel "$@" 2>/dev/null || \
-      run_as_root "$package_manager" install -y "$@" 2>/dev/null || \
-      warn "Package install failed: $*"
+      # Only use core repos — skips broken third-party repos (EPEL etc.)
+      if run_as_root "$package_manager" install -y --disablerepo="*" --enablerepo="BaseOS,AppStream,crb,powertools" "$@" 2>&1; then
+        return 0
+      fi
+      # Fallback: allow all repos
+      run_as_root "$package_manager" install -y "$@" 2>&1 || warn "Package install failed: $*"
       ;;
     zypper)
       run_as_root zypper --non-interactive install "$@"
@@ -91,16 +93,19 @@ install_packages() {
 
 # Try installing Python 3.10+ for old distros that ship older Python
 install_python_for_dnf() {
+  # Disable ALL repos, then enable only core ones — bypasses broken EPEL
+  local core_repos="BaseOS,AppStream,crb,powertools"
   local candidates=("python3.11" "python3.12" "python3.10" "python3")
   for pkg in "${candidates[@]}"; do
-    say "Trying: $pkg"
-    if run_as_root dnf install -y --disablerepo=epel "$pkg" 2>/dev/null; then
+    say "Trying: $pkg (core repos only)"
+    if run_as_root dnf install -y --disablerepo="*" --enablerepo="$core_repos" "$pkg" 2>&1; then
       return 0
     fi
   done
-  # Retry with EPEL (may fail on Chinese servers — that's okay)
+  # If core repos fail, try without any repo filter
   for pkg in python3.11 python3.10; do
-    if run_as_root dnf install -y "$pkg" 2>/dev/null; then
+    say "Trying: $pkg (all repos)"
+    if run_as_root dnf install -y "$pkg" 2>&1; then
       return 0
     fi
   done
