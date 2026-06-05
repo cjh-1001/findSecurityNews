@@ -26,7 +26,7 @@ python_is_compatible() {
 
 find_python() {
   local candidate
-  for candidate in python3 python; do
+  for candidate in python3.12 python3.11 python3.10 python3 python; do
     if python_is_compatible "$candidate"; then
       echo "$candidate"
       return 0
