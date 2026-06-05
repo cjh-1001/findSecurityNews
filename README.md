@@ -13,6 +13,25 @@
 - 支持导出静态 HTML 站点
 - 支持 Linux cron 定时采集推送和周/月自动归档清理
 
+## 环境要求
+
+- **Python >= 3.10**（`from __future__ import annotations` 等语法需要）
+- pip / venv
+- cron / crontab（定时推送需要）
+
+如果系统 Python 版本太低，先安装 Python 3.10+：
+
+```bash
+# Ubuntu / Debian
+sudo apt-get install -y python3.11 python3.11-venv python3.11-pip
+
+# TencentOS / CentOS / RHEL
+sudo dnf install -y python3.11 python3.11-pip python3.11-devel
+
+# 确认版本
+python3.11 --version
+```
+
 ## 最快启用：Linux 服务器
 
 首次部署先从 GitHub 拉取项目：
@@ -39,9 +58,9 @@ chmod +x scripts/*.sh
 交互脚本会完成：
 
 - 检查或安装 Python 3.10+、pip、cron/crontab
-- 创建 `.venv`
-- 安装依赖
-- 创建 `.env`
+- 创建 `.venv` 虚拟环境
+- 安装 Python 依赖
+- 创建 `.env` 配置文件
 - 初始化数据库
 - 配置飞书 webhook 和可选签名 secret
 - 配置是否启用 AI
@@ -50,11 +69,57 @@ chmod +x scripts/*.sh
 - 配置是否安装周清或月清数据库任务
 - 可选立即运行一次真实工作流测试
 
+> **注意**：交互脚本会在 `.env` 中写入 `PYTHON_BIN` 指向 `.venv/bin/python`。
+> 后续 `scripts/run_feishu.sh` 等脚本会优先使用 `PYTHON_BIN`，避免用到系统旧版 Python。
+
 建议服务器使用北京时间，避免 cron 触发时间和工作流窗口不一致：
 
 ```bash
 sudo timedatectl set-timezone Asia/Shanghai
 ```
+
+## 国内服务器部署
+
+如果服务器在国内（阿里云、腾讯云等），部分国外安全资讯站点可能无法访问或非常慢，采集时会卡住。
+
+建议编辑 `config/sources.toml`，将以下来源的 `enabled = true` 改为 `enabled = false`：
+
+| 来源 | 域名 | 原因 |
+|------|------|------|
+| `group_ib_blog` | group-ib.com | 俄罗斯站点，国内基本无法访问 |
+| `security_affairs_security` | securityaffairs.com | 国外站点，速度极慢 |
+| `securityonline_info` | securityonline.info | 国外站点 |
+| `malwarebytes_blog` | malwarebytes.com | 国外站点 |
+| `cyble_blog` | cyble.com | 国外站点 |
+| `cybersecurity360_news` | cybersecurity360.it | 意大利站点 |
+| `krebs_on_security` | krebsonsecurity.com | 国外站点 |
+
+用 sed 一键禁用：
+
+```bash
+cd findSecurityNews
+cp config/sources.toml config/sources.toml.bak
+sed -i \
+  -e '/name = "group_ib_blog"/{n;s/enabled = true/enabled = false/}' \
+  -e '/name = "security_affairs_security"/{n;s/enabled = true/enabled = false/}' \
+  -e '/name = "securityonline_info"/{n;s/enabled = true/enabled = false/}' \
+  -e '/name = "malwarebytes_blog"/{n;s/enabled = true/enabled = false/}' \
+  -e '/name = "cyble_blog"/{n;s/enabled = true/enabled = false/}' \
+  -e '/name = "cybersecurity360_news"/{n;s/enabled = true/enabled = false/}' \
+  -e '/name = "krebs_on_security"/{n;s/enabled = true/enabled = false/}' \
+  config/sources.toml
+```
+
+以下国内可正常访问的来源会继续生效：
+
+- 安全内参 (`secrss.com`)
+- 先知社区 (`xz.aliyun.com`)
+- 安全客 (`anquanke.com`)
+- T00ls (`t00ls.com`)
+- SecWiki (`sec-wiki.com`)
+- 77169 (`77169.net`)
+- Bianews AI (`bianews.com`)
+- HackerNews.cc (`hackernews.cc`)
 
 ## 部署后验证
 
@@ -62,6 +127,14 @@ sudo timedatectl set-timezone Asia/Shanghai
 
 ```bash
 crontab -l | grep findSecurityNews
+```
+
+如果输出为空，说明 cron 没有装上，单独运行安装脚本：
+
+```bash
+scripts/install_cron.sh
+scripts/install_cleanup_cron.sh weekly
+crontab -l | grep findSecurityNews   # 再次确认
 ```
 
 手动跑一次最新采集和推送：
@@ -129,6 +202,7 @@ CLEANUP_VACUUM=false
 | `FEISHU_SECRET` | 飞书机器人签名密钥，开启签名校验时填写 |
 | `COLLECT_LIMIT` | 每个来源每次采集数量 |
 | `PUSH_LIMIT` | 每次推送最多发送多少篇 |
+| `PYTHON_BIN` | Python 解释器路径，应指向 `.venv/bin/python`，确保使用 3.10+ 版本 |
 | `ENABLE_AI` | 定时工作流是否启用 AI 分析 |
 | `OPENAI_BASE_URL` | OpenAI 或兼容网关地址 |
 | `OPENAI_API_KEY` | AI API key |
@@ -214,6 +288,9 @@ scripts/install_cron.sh
 0 8 * * *  scripts/feishu_morning.sh
 0 20 * * * scripts/feishu_evening.sh
 ```
+
+> **提示**：如果 `setup_linux.sh` 交互部署时跳过了定时任务配置，可以随时单独运行
+> `scripts/install_cron.sh` 来补装。安装后执行 `crontab -l | grep findSecurityNews` 验证。
 
 手动安装数据库自动清理：
 
@@ -358,22 +435,67 @@ enabled = true
 
 ## 常见问题
 
-如果飞书没有收到消息：
+### 飞书没有收到消息
 
 ```bash
 tail -n 100 logs/feishu.log
 python3 run.py push-feishu --limit 3
 ```
 
-如果 cron 时间不符合预期：
+### cron 定时任务没有执行
 
 ```bash
+# 先确认 cron 是否装上了
+crontab -l | grep findSecurityNews
+
+# 如果为空，补装
+scripts/install_cron.sh
+scripts/install_cleanup_cron.sh weekly
+
+# 确认 cron 服务在运行
+systemctl status cron   # 或 systemctl status crond
+
+# 确认时区
 date
 timedatectl
 sudo timedatectl set-timezone Asia/Shanghai
 ```
 
-如果清理任务没有执行：
+### 采集时卡住不动
+
+通常是某个国外来源网络不通。终端被卡住的进程（`Ctrl+C`），然后禁用该来源：
+
+```bash
+# 查看是哪个来源卡住了，在 config/sources.toml 里将其 enabled 设为 false
+vi config/sources.toml
+
+# 或参考上文"国内服务器部署"章节，批量禁用国外来源
+```
+
+### Python 报 SyntaxError
+
+```text
+SyntaxError: future feature annotations is not defined
+```
+
+说明当前 Python 版本太旧（< 3.7，项目要求 >= 3.10）。解决方法：
+
+```bash
+# 确认当前版本
+python3 --version
+
+# 检查 .env 里的 PYTHON_BIN
+grep PYTHON_BIN .env
+
+# 如果 PYTHON_BIN 指向了旧版本 Python，改为指向 .venv 或新安装的 Python 3.11
+echo "PYTHON_BIN=$(pwd)/.venv/bin/python" >> .env
+
+# 如果没有 .venv，重建虚拟环境
+python3.11 -m venv .venv
+.venv/bin/pip install -e .
+```
+
+### 清理任务没有执行
 
 ```bash
 crontab -l | grep cleanup
