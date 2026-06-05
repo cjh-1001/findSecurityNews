@@ -70,11 +70,11 @@ install_packages() {
       run_as_root apt-get update
       run_as_root apt-get install -y "$@"
       ;;
-    dnf)
-      run_as_root dnf install -y "$@"
-      ;;
-    yum)
-      run_as_root yum install -y "$@"
+    dnf|yum)
+      # Try without EPEL first (Chinese servers often can't reach EPEL mirrors)
+      run_as_root "$package_manager" install -y --disablerepo=epel "$@" 2>/dev/null || \
+      run_as_root "$package_manager" install -y "$@" 2>/dev/null || \
+      warn "Package install failed: $*"
       ;;
     zypper)
       run_as_root zypper --non-interactive install "$@"
@@ -89,6 +89,24 @@ install_packages() {
   esac
 }
 
+# Try installing Python 3.10+ for old distros that ship older Python
+install_python_for_dnf() {
+  local candidates=("python3.11" "python3.12" "python3.10" "python3")
+  for pkg in "${candidates[@]}"; do
+    say "Trying: $pkg"
+    if run_as_root dnf install -y --disablerepo=epel "$pkg" 2>/dev/null; then
+      return 0
+    fi
+  done
+  # Retry with EPEL (may fail on Chinese servers — that's okay)
+  for pkg in python3.11 python3.10; do
+    if run_as_root dnf install -y "$pkg" 2>/dev/null; then
+      return 0
+    fi
+  done
+  return 1
+}
+
 ensure_system_dependencies() {
   local package_manager
   local python_bin
@@ -99,14 +117,29 @@ ensure_system_dependencies() {
     say "Installing Python 3.10+"
     case "$package_manager" in
       apt) install_packages "$package_manager" python3 python3-pip python3-venv ;;
-      dnf|yum) install_packages "$package_manager" python3 python3-pip ;;
+      dnf|yum) install_python_for_dnf ;;
       zypper) install_packages "$package_manager" python3 python3-pip ;;
       pacman) install_packages "$package_manager" python python-pip ;;
       *) install_packages "$package_manager" python3 python3-pip ;;
     esac
     python_bin="$(find_python)"
     if [[ -z "$python_bin" ]]; then
-      echo "Python 3.10+ is still unavailable after installation." >&2
+      warn "Python 3.10+ is still unavailable after automatic install."
+      cat >&2 <<PYHELP
+
+请手动安装 Python 3.10+：
+
+  # CentOS/RHEL/OpenCloudOS 8
+  dnf install -y python3.11 python3.11-pip
+
+  # CentOS/RHEL/OpenCloudOS 9
+  dnf install -y python3 python3-pip
+
+  # Ubuntu/Debian
+  apt-get install -y python3 python3-pip python3-venv
+
+安装后重新运行本脚本。
+PYHELP
       return 1
     fi
   fi
@@ -115,7 +148,7 @@ ensure_system_dependencies() {
     say "Installing pip"
     case "$package_manager" in
       apt) install_packages "$package_manager" python3-pip python3-venv ;;
-      dnf|yum) install_packages "$package_manager" python3-pip ;;
+      dnf|yum) install_packages "$package_manager" python3-pip python3.11-pip 2>/dev/null || true ;;
       zypper) install_packages "$package_manager" python3-pip ;;
       pacman) install_packages "$package_manager" python-pip ;;
       *) install_packages "$package_manager" python3-pip ;;
