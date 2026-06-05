@@ -274,7 +274,7 @@ def collect(args: argparse.Namespace, db: Database) -> int:
 def fetch_full_articles(source, rss_articles):
     articles = []
     for index, rss_article in enumerate(rss_articles, start=1):
-        print(f"Fetching article {index}/{len(rss_articles)}: {rss_article.url}")
+        print(f"  [{source.name}] article {index}/{len(rss_articles)}: {rss_article.url}", flush=True)
         try:
             article_html = fetch_text(rss_article.url, timeout=30, retries=1)
         except RuntimeError as exc:
