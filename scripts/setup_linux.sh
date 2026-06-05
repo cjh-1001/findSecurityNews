@@ -343,6 +343,12 @@ configure_env() {
   PYTHON_BIN="$(prompt_value PYTHON_BIN 'Python command' "$DEFAULT_PYTHON_BIN" false true)"
   ENABLE_DASHBOARD="$(prompt_value ENABLE_DASHBOARD 'Enable built-in web dashboard? true/false' 'false')"
   ENABLE_RSSHUB="$(prompt_value ENABLE_RSSHUB 'Enable RSSHub (for WeChat MP sources)? true/false' 'false')"
+  if confirm "Enable foreign sources (may be unreachable from China)?" "n"; then
+    ENABLE_FOREIGN_SOURCES="true"
+  else
+    ENABLE_FOREIGN_SOURCES="false"
+    bash scripts/toggle_sources.sh off
+  fi
 
   umask 077
   : > "$ENV_FILE"
@@ -362,6 +368,7 @@ configure_env() {
   write_env_line PYTHON_BIN "$PYTHON_BIN"
   write_env_line ENABLE_DASHBOARD "$ENABLE_DASHBOARD"
   write_env_line ENABLE_RSSHUB "$ENABLE_RSSHUB"
+  write_env_line ENABLE_FOREIGN_SOURCES "$ENABLE_FOREIGN_SOURCES"
 
   echo "Wrote $ENV_FILE. Secrets are stored locally in plaintext."
 }
