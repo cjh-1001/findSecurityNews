@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from collections import defaultdict
-from datetime import date, datetime, time, timezone
+from collections import Counter, defaultdict
+from datetime import date, datetime, time, timedelta, timezone
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -17,6 +17,22 @@ from .time_format import format_article_time
 
 DEFAULT_ARCHIVE_DIR = Path(__file__).resolve().parents[2] / "outputs" / "archive"
 PAGE_SIZE_OPTIONS = (20, 50, 100, 200)
+LOCAL_TZ = timezone(timedelta(hours=8), name="Asia/Shanghai")
+PRIORITY_LABELS = {
+    "critical": "关键",
+    "high": "高",
+    "medium": "中",
+    "low": "低",
+    "unknown": "未标注",
+}
+TYPE_LABELS = {
+    "security_news": "安全资讯",
+    "vulnerability": "漏洞",
+    "threat_intelligence": "威胁情报",
+    "ransomware": "勒索软件",
+    "malware": "恶意软件",
+    "incident": "安全事件",
+}
 
 
 def h(value: object) -> str:
@@ -73,6 +89,43 @@ def truncate(value: str, limit: int = 180) -> str:
     if len(value) <= limit:
         return value
     return value[: limit - 1] + "…"
+
+
+def normalize_list(value) -> list[str]:
+    if not value:
+        return []
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list):
+        return [str(item) for item in value if item]
+    return []
+
+
+def priority_label(value: str) -> str:
+    normalized = (value or "unknown").lower()
+    return PRIORITY_LABELS.get(normalized, value or "未标注")
+
+
+def type_label(value: str) -> str:
+    normalized = (value or "security_news").lower()
+    return TYPE_LABELS.get(normalized, value or "安全资讯")
+
+
+def priority_class(value: str) -> str:
+    normalized = (value or "unknown").lower()
+    if normalized in {"critical", "high"}:
+        return "red"
+    if normalized == "medium":
+        return "yellow"
+    if normalized == "low":
+        return "green"
+    return "neutral"
+
+
+def format_percent(numerator: int, denominator: int) -> str:
+    if denominator <= 0:
+        return "0%"
+    return f"{round(numerator / denominator * 100)}%"
 
 
 class DashboardStore:
@@ -151,7 +204,7 @@ class DashboardStore:
             where.append("substr(COALESCE(NULLIF(a.published_at, ''), a.created_at), 1, 10) >= ?")
             values.append(from_date)
         if to_date:
-            where.append("substr(COALESCE(NULLIF(a.published_at, ''), a.created_at), 1, 10) < ?")
+            where.append("substr(COALESCE(NULLIF(a.published_at, ''), a.created_at), 1, 10) <= ?")
             values.append(to_date)
         clause = f"WHERE {' AND '.join(where)}" if where else ""
 
@@ -199,6 +252,87 @@ class DashboardStore:
                     """
                 )
             )
+
+    def overview(self) -> dict:
+        rows = self.all_rows()
+        unique_rows = [row for row in rows if row["duplicate_of_article_id"] is None]
+        now = datetime.now(LOCAL_TZ)
+        today_start = datetime.combine(now.date(), time.min, LOCAL_TZ)
+        week_start = now - timedelta(days=7)
+        priority_counts: Counter[str] = Counter()
+        type_counts: Counter[str] = Counter()
+        source_counts: Counter[str] = Counter()
+        cve_count = 0
+        ai_count = 0
+        today_count = 0
+        week_count = 0
+        high_priority_count = 0
+
+        for row in unique_rows:
+            record_time = parse_record_time(row).astimezone(LOCAL_TZ)
+            if record_time >= today_start:
+                today_count += 1
+            if record_time >= week_start:
+                week_count += 1
+
+            source_counts[row["source_name"]] += 1
+            ai = row_ai(row)
+            if not ai:
+                priority_counts["unknown"] += 1
+                type_counts["security_news"] += 1
+                continue
+
+            ai_count += 1
+            priority = (ai.get("priority") or "unknown").lower()
+            security_type = (ai.get("security_type") or "security_news").lower()
+            priority_counts[priority] += 1
+            type_counts[security_type] += 1
+            cve_count += len(normalize_list(ai.get("cves")))
+            if priority in {"critical", "high"}:
+                high_priority_count += 1
+
+        top_sources = [
+            {
+                "source": source,
+                "count": count,
+                "percent": format_percent(count, len(unique_rows)),
+            }
+            for source, count in source_counts.most_common(6)
+        ]
+        priority_order = ["critical", "high", "medium", "low", "unknown"]
+        priority_items = [
+            {
+                "key": key,
+                "label": priority_label(key),
+                "count": priority_counts[key],
+                "percent": format_percent(priority_counts[key], len(unique_rows)),
+            }
+            for key in priority_order
+            if priority_counts[key]
+        ]
+        type_items = [
+            {
+                "key": key,
+                "label": type_label(key),
+                "count": count,
+                "percent": format_percent(count, len(unique_rows)),
+            }
+            for key, count in type_counts.most_common(6)
+        ]
+        latest_at = max((parse_record_time(row) for row in unique_rows), default=None)
+        return {
+            "unique_total": len(unique_rows),
+            "today_count": today_count,
+            "week_count": week_count,
+            "ai_count": ai_count,
+            "ai_coverage": format_percent(ai_count, len(unique_rows)),
+            "cve_count": cve_count,
+            "high_priority_count": high_priority_count,
+            "latest_at": format_article_time(latest_at.isoformat()) if latest_at else "无",
+            "top_sources": top_sources,
+            "priority_items": priority_items,
+            "type_items": type_items,
+        }
 
     def month_buckets(self) -> dict[str, list[sqlite3.Row]]:
         buckets: dict[str, list[sqlite3.Row]] = defaultdict(list)
@@ -398,7 +532,7 @@ def base_html(title: str, active: str, body: str) -> str:
       display: flex; align-items: center; justify-content: center;
       color: #fff; font-size: 15px; font-weight: 800; flex-shrink: 0;
     }}
-    .brand {{ font-size: 17px; font-weight: 750; letter-spacing: -.01em; white-space: nowrap; }}
+    .brand {{ font-size: 17px; font-weight: 750; letter-spacing: 0; white-space: nowrap; }}
     nav {{ display: flex; align-items: center; gap: 2px; }}
     .nav-link {{
       color: var(--text-secondary); text-decoration: none;
@@ -436,8 +570,40 @@ def base_html(title: str, active: str, body: str) -> str:
     .metric:nth-child(4)::before {{ background: var(--stat-4); }}
     .metric:nth-child(5)::before {{ background: var(--stat-5); }}
     .metric:nth-child(6)::before {{ background: var(--stat-6); }}
-    .metric-value {{ display: block; font-size: 24px; font-weight: 750; letter-spacing: -.02em; line-height: 1.15; }}
+    .metric-value {{ display: block; font-size: 24px; font-weight: 750; letter-spacing: 0; line-height: 1.15; }}
     .metric-label {{ color: var(--text-secondary); font-size: 12px; font-weight: 500; margin-top: 2px; display: block; }}
+    .metric-note {{ color: var(--muted); font-size: 11.5px; margin-top: 6px; display: block; }}
+
+    /* ============================================================
+       Overview Panels
+       ============================================================ */
+    .overview-grid {{
+      display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+      gap: 14px; margin-bottom: 14px;
+    }}
+    .insight-list {{ display: grid; gap: 12px; padding: 16px 18px; }}
+    .insight-row {{
+      display: grid; grid-template-columns: minmax(90px, 140px) 1fr auto;
+      gap: 12px; align-items: center; min-width: 0;
+    }}
+    .insight-label {{
+      color: var(--text-secondary); font-weight: 650; font-size: 12.5px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }}
+    .bar-track {{
+      height: 8px; border-radius: 999px; overflow: hidden;
+      background: var(--surface-3); border: 1px solid var(--border-light);
+    }}
+    .bar-fill {{ height: 100%; border-radius: inherit; background: var(--accent); }}
+    .insight-value {{ color: var(--text); font-weight: 700; font-size: 12.5px; white-space: nowrap; }}
+    .chip-row {{ display: flex; flex-wrap: wrap; gap: 8px; padding: 16px 18px; }}
+    .chip {{
+      display: inline-flex; align-items: center; gap: 6px; min-height: 30px;
+      padding: 5px 10px; border-radius: var(--radius-sm);
+      background: var(--surface); border: 1px solid var(--border);
+      color: var(--text-secondary); font-size: 12.5px; font-weight: 650;
+    }}
+    .chip strong {{ color: var(--text); font-weight: 750; }}
 
     /* ============================================================
        Toolbar & Forms
@@ -500,7 +666,7 @@ def base_html(title: str, active: str, body: str) -> str:
       gap: 14px; padding: 14px 18px; border-bottom: 1px solid var(--border);
       background: var(--surface-2);
     }}
-    h1, h2 {{ margin: 0; font-size: 15px; font-weight: 700; letter-spacing: -.01em; }}
+    h1, h2 {{ margin: 0; font-size: 15px; font-weight: 700; letter-spacing: 0; }}
     .muted {{ color: var(--muted); font-size: 13px; }}
     table {{ width: 100%; border-collapse: collapse; table-layout: fixed; }}
     th, td {{ padding: 11px 14px; border-bottom: 1px solid var(--border-light); vertical-align: top; }}
@@ -540,7 +706,7 @@ def base_html(title: str, active: str, body: str) -> str:
       display: grid; grid-template-columns: repeat(4, minmax(120px, 1fr));
       gap: 10px; padding: 16px;
     }}
-    .form-actions {{ display: flex; gap: 10px; align-items: end; }}
+    .form-actions {{ display: flex; gap: 10px; align-items: end; flex-wrap: wrap; }}
     .content {{ padding: 18px; }}
     pre {{
       margin: 0; white-space: pre-wrap; overflow-wrap: anywhere;
@@ -627,6 +793,7 @@ def base_html(title: str, active: str, body: str) -> str:
        ============================================================ */
     @media (max-width: 960px) {{
       .stats {{ grid-template-columns: repeat(3, 1fr); }}
+      .overview-grid {{ grid-template-columns: 1fr; }}
       .toolbar, .form-grid, .grid-two {{ grid-template-columns: 1fr 1fr; }}
     }}
     @media (max-width: 680px) {{
@@ -664,11 +831,11 @@ def query_link(path: str, params: dict[str, object]) -> str:
 def render_stats(store: DashboardStore, extra_metric: tuple[str, object] | None = None) -> str:
     stats = store.stats()
     items = [
-        ("📰 文章总数", stats["total"]),
-        ("✅ 唯一文章", stats["unique_total"]),
-        ("🔄 重复记录", stats["duplicate_total"]),
-        ("🤖 AI 分析", stats["ai_total"]),
-        ("📡 来源数", stats["source_total"]),
+        ("文章总数", stats["total"]),
+        ("唯一文章", stats["unique_total"]),
+        ("重复记录", stats["duplicate_total"]),
+        ("AI 分析", stats["ai_total"]),
+        ("来源数", stats["source_total"]),
     ]
     if extra_metric:
         items.append(extra_metric)
@@ -679,6 +846,60 @@ def render_stats(store: DashboardStore, extra_metric: tuple[str, object] | None 
     ) + "</section>"
 
 
+def render_overview(store: DashboardStore) -> str:
+    overview = store.overview()
+    cards = [
+        ("唯一文章", overview["unique_total"], f'最新：{overview["latest_at"]}'),
+        ("今日新增", overview["today_count"], "按 Asia/Shanghai 统计"),
+        ("近 7 天", overview["week_count"], "唯一文章"),
+        ("AI 覆盖率", overview["ai_coverage"], f'{overview["ai_count"]} 篇已分析'),
+        ("高风险", overview["high_priority_count"], "关键与高优先级"),
+        ("CVE", overview["cve_count"], "AI 抽取结果"),
+    ]
+    card_html = '<section class="stats">' + "".join(
+        f'<div class="metric"><span class="metric-value">{h(value)}</span>'
+        f'<span class="metric-label">{h(label)}</span>'
+        f'<span class="metric-note">{h(note)}</span></div>'
+        for label, value, note in cards
+    ) + "</section>"
+
+    source_rows = "".join(
+        '<div class="insight-row">'
+        f'<span class="insight-label" title="{h(item["source"])}">{h(item["source"])}</span>'
+        f'<span class="bar-track"><span class="bar-fill" style="width:{h(item["percent"])}"></span></span>'
+        f'<span class="insight-value">{h(item["count"])} · {h(item["percent"])}</span>'
+        "</div>"
+        for item in overview["top_sources"]
+    ) or '<div class="content muted">暂无来源数据。</div>'
+
+    priority_chips = "".join(
+        f'<span class="chip"><span>{h(item["label"])}</span>'
+        f'<strong>{h(item["count"])}</strong><span>{h(item["percent"])}</span></span>'
+        for item in overview["priority_items"]
+    ) or '<span class="muted">暂无优先级数据。</span>'
+
+    type_chips = "".join(
+        f'<span class="chip"><span>{h(item["label"])}</span>'
+        f'<strong>{h(item["count"])}</strong><span>{h(item["percent"])}</span></span>'
+        for item in overview["type_items"]
+    ) or '<span class="muted">暂无类型数据。</span>'
+
+    return f"""
+{card_html}
+<section class="overview-grid">
+  <section class="panel">
+    <div class="panel-head"><h2>来源分布</h2><span class="muted">Top 6</span></div>
+    <div class="insight-list">{source_rows}</div>
+  </section>
+  <section class="panel">
+    <div class="panel-head"><h2>风险与类型</h2><span class="muted">基于 AI 结果</span></div>
+    <div class="chip-row">{priority_chips}</div>
+    <div class="chip-row" style="padding-top:0;">{type_chips}</div>
+  </section>
+</section>
+"""
+
+
 def render_articles(store: DashboardStore, params: dict[str, str]) -> str:
     rows, total = store.list_articles(params)
     page = parse_int(params.get("page", "1"), 1, 1, 99999)
@@ -686,6 +907,9 @@ def render_articles(store: DashboardStore, params: dict[str, str]) -> str:
     source = params.get("source", "")
     sources = store.source_counts()
     pages = max(1, (total + limit - 1) // limit)
+    if total and page > pages:
+        page = pages
+        rows, total = store.list_articles({**params, "page": str(page)})
     options = ['<option value="">全部来源</option>']
     for row in sources:
         selected = " selected" if source == row["source_name"] else ""
@@ -698,8 +922,9 @@ def render_articles(store: DashboardStore, params: dict[str, str]) -> str:
         for size in PAGE_SIZE_OPTIONS
     )
     duplicates_checked = " checked" if params.get("duplicates") == "1" else ""
+    reset_link = '<a class="button secondary" href="/">重置</a>' if params else ""
     body = f"""
-{render_stats(store)}
+{render_overview(store)}
 <form class="toolbar" method="get" action="/">
   <label>搜索<input name="q" value="{h(params.get("q", ""))}" placeholder="标题、摘要、正文、链接"></label>
   <label>来源<select name="source">{"".join(options)}</select></label>
@@ -709,6 +934,7 @@ def render_articles(store: DashboardStore, params: dict[str, str]) -> str:
     <label>每页<select name="limit">{limit_options}</select></label>
     <label class="checkbox"><input type="checkbox" name="duplicates" value="1"{duplicates_checked}>含重复</label>
     <button type="submit">筛选</button>
+    {reset_link}
   </div>
 </form>
 <section class="panel">
@@ -733,20 +959,19 @@ def render_article_table(rows: list[sqlite3.Row]) -> str:
             status.append('<span class="pill green">唯一</span>')
         if ai:
             priority = ai.get("priority") or "AI"
-            priority_cls = ""
-            if priority.lower() in ("critical", "high"):
-                priority_cls = "red"
-            elif priority.lower() == "medium":
-                priority_cls = "yellow"
-            elif priority.lower() == "low":
-                priority_cls = "green"
-            else:
-                priority_cls = "neutral"
-            status.append(f'<span class="pill {priority_cls}">{h(priority)}</span>')
+            status.append(
+                f'<span class="pill {priority_class(priority)}">{h(priority_label(priority))}</span>'
+            )
+        brief = (
+            ai.get("brief_zh")
+            or ai.get("summary_zh")
+            or row["summary"]
+            or row["content_text"]
+        )
         table_rows.append(
             "<tr>"
             f'<td class="title-cell"><a class="title-link" href="/article?id={h(row["id"])}">'
-            f'{h(row["title"])}</a><div class="muted">{h(truncate(row["summary"] or row["content_text"], 150))}</div></td>'
+            f'{h(row["title"])}</a><div class="muted">{h(truncate(brief, 150))}</div></td>'
             f'<td class="source-cell"><span class="pill neutral">{h(row["source_name"])}</span></td>'
             f'<td class="date-cell">{h(format_article_time(row["published_at"]))}</td>'
             f'<td class="status-cell">{" ".join(status)}</td>'
