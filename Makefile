@@ -49,14 +49,23 @@ logs: ## 查看最近日志
 collect: ## 采集文章 + AI 分析
 	$(PYTHON) run.py collect --limit 30 --ai
 
-push: ## 推送最新文章
-	$(PYTHON) run.py feishu-workflow --window latest --ai
+push: ## 采集 + 推送最新文章
+	bash scripts/run_feishu.sh workflow latest
 
-push-am: ## 推送早报
-	$(PYTHON) run.py feishu-workflow --window morning --ai
+collect-only: ## 仅采集 + AI 分析（不推送）
+	bash scripts/run_feishu.sh collect
 
-push-pm: ## 推送晚报
-	$(PYTHON) run.py feishu-workflow --window evening --ai
+push-am: ## 推送早报（采集+推送一体，手动用）
+	bash scripts/run_feishu.sh workflow morning
+
+push-pm: ## 推送晚报（采集+推送一体，手动用）
+	bash scripts/run_feishu.sh workflow evening
+
+push-only-am: ## 仅推送早报（不采集，依赖 cron 提前采集）
+	bash scripts/run_feishu.sh push morning
+
+push-only-pm: ## 仅推送晚报（不采集，依赖 cron 提前采集）
+	bash scripts/run_feishu.sh push evening
 
 dashboard: ## 启动仪表盘 (需要 ENABLE_DASHBOARD=true)
 	ENABLE_DASHBOARD=true $(PYTHON) run.py dashboard --host 0.0.0.0 --port 8000

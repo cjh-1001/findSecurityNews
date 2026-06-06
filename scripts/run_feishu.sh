@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# 飞书工作流：采集 → 推送
-# 用法: scripts/run_feishu.sh [window] [extra args]
-#   window: latest | day | morning | evening (默认 latest)
+# 飞书工作流：采集 / 推送 / 完整流程
+# 用法: scripts/run_feishu.sh <mode> [window] [extra args]
+#   mode: collect | push | workflow (默认 workflow)
+#   window (push/workflow 模式): latest | day | morning | evening (默认 latest)
 set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -17,9 +18,17 @@ if [[ -f ".env" ]]; then
   set +a
 fi
 
-WINDOW="${1:-latest}"
-if [[ $# -gt 0 ]]; then
+MODE="${1:-workflow}"
+shift
+
+if [[ "$MODE" =~ ^(push|workflow)$ ]]; then
+  WINDOW="${1:-latest}"
   shift
+elif [[ "$MODE" == "collect" ]]; then
+  WINDOW="latest"  # collect 模式不需要窗口参数
+else
+  echo "未知模式: $MODE (可选: collect, push, workflow)" >&2
+  exit 1
 fi
 
 NOW=$(date '+%Y-%m-%d %H:%M:%S')
@@ -29,7 +38,7 @@ log()  { echo "[$NOW] $1" | tee -a "$LOG_FILE"; }
 warn() { echo "[$NOW] WARN: $1" | tee -a "$LOG_FILE" >&2; }
 err()  { echo "[$NOW] ERROR: $1" | tee -a "$LOG_FILE" >&2; }
 
-log "工作流开始 (window=$WINDOW)"
+log "工作流开始 (mode=$MODE, window=$WINDOW)"
 
 # ── 检查 RSSHub ──
 if [[ "${ENABLE_RSSHUB:-false}" =~ ^(1|true|yes)$ ]]; then
@@ -40,27 +49,54 @@ if [[ "${ENABLE_RSSHUB:-false}" =~ ^(1|true|yes)$ ]]; then
   fi
 fi
 
-# ── 构建参数 ──
-ARGS=(
-  run.py
-  feishu-workflow
-  --window "$WINDOW"
-  --collect-limit "${COLLECT_LIMIT:-30}"
-  --push-limit "${PUSH_LIMIT:-20}"
-)
-
-if [[ "${ENABLE_AI:-false}" =~ ^(1|true|yes)$ ]]; then
-  log "AI 已启用"
-  ARGS+=(--ai)
-fi
-
-ARGS+=("$@")
-
-# ── 运行 ──
 PYTHON="${PYTHON_BIN:-python3}"
 export PYTHONUNBUFFERED=1
-log "执行: $PYTHON ${ARGS[*]}"
 
+AI_FLAG=()
+if [[ "${ENABLE_AI:-false}" =~ ^(1|true|yes)$ ]]; then
+  log "AI 已启用"
+  AI_FLAG=(--ai)
+fi
+
+# ── 构建参数 ──
+case "$MODE" in
+  collect)
+    ARGS=(
+      run.py
+      collect
+      --limit "${COLLECT_LIMIT:-30}"
+    )
+    ARGS+=("${AI_FLAG[@]}" "$@")
+    log "执行: $PYTHON ${ARGS[*]}"
+    ;;
+  push)
+    ARGS=(
+      run.py
+      push-feishu
+      --window "$WINDOW"
+      --limit "${PUSH_LIMIT:-20}"
+    )
+    ARGS+=("$@")
+    log "执行: $PYTHON ${ARGS[*]}"
+    ;;
+  workflow)
+    ARGS=(
+      run.py
+      feishu-workflow
+      --window "$WINDOW"
+      --collect-limit "${COLLECT_LIMIT:-30}"
+      --push-limit "${PUSH_LIMIT:-20}"
+    )
+    ARGS+=("${AI_FLAG[@]}" "$@")
+    log "执行: $PYTHON ${ARGS[*]}"
+    ;;
+  *)
+    err "未知模式: $MODE (可选: collect, push, workflow)"
+    exit 1
+    ;;
+esac
+
+# ── 运行 ──
 if "$PYTHON" "${ARGS[@]}" 2>&1 | tee -a "$LOG_FILE"; then
   log "工作流完成"
 else

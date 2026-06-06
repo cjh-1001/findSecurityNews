@@ -224,7 +224,7 @@ def collect(args: argparse.Namespace, db: Database) -> int:
         collected += 1
         inserted += int(is_new and not is_duplicate)
         duplicates += int(is_duplicate)
-        if args.ai and not is_duplicate:
+        if args.ai and is_new and not is_duplicate:
             articles_for_ai.append((article_id, article))
 
     print(
