@@ -84,6 +84,7 @@ case "$MODE" in
       --window "$WINDOW"
       --limit "${PUSH_LIMIT:-20}"
       --batch-size "${PUSH_BATCH_SIZE:-20}"
+      --summary-limit "${PUSH_SUMMARY_LIMIT:-30}"
     )
     ARGS+=("$@")
     log "执行: $PYTHON ${ARGS[*]}"
@@ -96,6 +97,7 @@ case "$MODE" in
       --collect-limit "${COLLECT_LIMIT:-30}"
       --push-limit "${PUSH_LIMIT:-20}"
       --batch-size "${PUSH_BATCH_SIZE:-20}"
+      --summary-limit "${PUSH_SUMMARY_LIMIT:-30}"
     )
     ARGS+=("${AI_FLAG[@]}" "$@")
     log "执行: $PYTHON ${ARGS[*]}"

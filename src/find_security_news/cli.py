@@ -84,6 +84,7 @@ def build_parser() -> argparse.ArgumentParser:
     feishu_cmd = subparsers.add_parser("push-feishu")
     feishu_cmd.add_argument("--limit", type=int, default=8)
     feishu_cmd.add_argument("--batch-size", type=int, default=20)
+    feishu_cmd.add_argument("--summary-limit", type=int, default=30)
     feishu_cmd.add_argument("--date", default="")
     feishu_cmd.add_argument(
         "--window",
@@ -98,6 +99,7 @@ def build_parser() -> argparse.ArgumentParser:
     workflow_cmd.add_argument("--collect-limit", type=int, default=30)
     workflow_cmd.add_argument("--push-limit", type=int, default=20)
     workflow_cmd.add_argument("--batch-size", type=int, default=20)
+    workflow_cmd.add_argument("--summary-limit", type=int, default=30)
     workflow_cmd.add_argument("--date", default="")
     workflow_cmd.add_argument("--ai", action="store_true")
     workflow_cmd.add_argument(
@@ -543,6 +545,7 @@ def build_feishu_text(
     range_label: str = "",
     batch_label: str = "",
     start_index: int = 1,
+    summary_limit: int = 30,
 ) -> str:
     lines = ["安全资讯简报"]
     if range_label:
@@ -561,7 +564,7 @@ def build_feishu_text(
             [
                 f"{index}. {row['title']}",
                 f"日期: {format_article_time(row['published_at'])}",
-                f"梗概: {truncate(synopsis, 360)}",
+                f"梗概: {truncate(synopsis, summary_limit)}",
                 f"链接: {row['url']}",
                 "",
             ]
@@ -598,7 +601,11 @@ def push_feishu(args: argparse.Namespace, db: Database) -> int:
     rows = prioritize_feishu_rows(rows)[: args.limit]
     if not rows:
         if not args.no_empty_message:
-            response = send_text(webhook, build_feishu_text(rows, range_label), secret=secret)
+            response = send_text(
+                webhook,
+                build_feishu_text(rows, range_label, summary_limit=args.summary_limit),
+                secret=secret,
+            )
             print(json.dumps(response, ensure_ascii=False))
             return 0
         print("No articles to push.", file=sys.stderr)
@@ -615,6 +622,7 @@ def push_feishu(args: argparse.Namespace, db: Database) -> int:
                 range_label,
                 batch_label=batch_label,
                 start_index=start + 1,
+                summary_limit=args.summary_limit,
             ),
             secret=secret,
         )
@@ -639,6 +647,7 @@ def feishu_workflow(args: argparse.Namespace, db: Database) -> int:
     push_args = argparse.Namespace(
         limit=args.push_limit,
         batch_size=args.batch_size,
+        summary_limit=args.summary_limit,
         date=args.date,
         window=args.window,
         no_empty_message=args.no_empty_message,

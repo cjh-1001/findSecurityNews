@@ -81,6 +81,8 @@ findSecurityNews/
 | `FEISHU_SECRET` | 飞书签名密钥 | 可选 |
 | `COLLECT_LIMIT` | 每源每次采集数 | `30` |
 | `PUSH_LIMIT` | 每次推送数 | `20` |
+| `PUSH_BATCH_SIZE` | 每条飞书消息最多包含条数 | `20` |
+| `PUSH_SUMMARY_LIMIT` | 飞书梗概最大字数 | `30` |
 | `ENABLE_AI` | 启用 AI 分析 | `false` |
 | `AI_PROVIDER` | `openai` / `anthropic` | `openai` |
 | `OPENAI_BASE_URL` | API 地址 | `https://api.openai.com/v1` |
@@ -132,7 +134,7 @@ enabled = true
 
 1. CVE-2026-XXXX 漏洞分析报告
 日期: 2026-06-05 14:30
-梗概: 该报告详细分析了影响主流防火墙的远程代码执行漏洞...
+梗概: 主流防火墙存在远程代码执行漏洞
 链接: https://example.com/article
 ```
 
@@ -143,7 +145,7 @@ enabled = true
 python3 run.py collect --limit 30 --ai
 
 # 推送
-python3 run.py push-feishu --window morning --limit 20
+python3 run.py push-feishu --window morning --limit 20 --batch-size 20 --summary-limit 30
 
 # 采集+推送（推荐）
 python3 run.py feishu-workflow --window day --ai
