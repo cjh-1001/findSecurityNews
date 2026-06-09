@@ -83,6 +83,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     feishu_cmd = subparsers.add_parser("push-feishu")
     feishu_cmd.add_argument("--limit", type=int, default=8)
+    feishu_cmd.add_argument("--batch-size", type=int, default=20)
     feishu_cmd.add_argument("--date", default="")
     feishu_cmd.add_argument(
         "--window",
@@ -96,6 +97,7 @@ def build_parser() -> argparse.ArgumentParser:
     workflow_cmd = subparsers.add_parser("feishu-workflow")
     workflow_cmd.add_argument("--collect-limit", type=int, default=30)
     workflow_cmd.add_argument("--push-limit", type=int, default=20)
+    workflow_cmd.add_argument("--batch-size", type=int, default=20)
     workflow_cmd.add_argument("--date", default="")
     workflow_cmd.add_argument("--ai", action="store_true")
     workflow_cmd.add_argument(
@@ -429,16 +431,130 @@ def filter_rows_by_window(rows, window: str, value: str = ""):
     return filtered, label
 
 
-def build_feishu_text(rows, range_label: str = "") -> str:
+def normalize_text_list(value) -> list[str]:
+    if isinstance(value, list):
+        return [str(item) for item in value if item]
+    return []
+
+
+def parse_categories(row) -> list[str]:
+    try:
+        categories = json.loads(row["categories_json"])
+    except (KeyError, TypeError, json.JSONDecodeError):
+        return []
+    return normalize_text_list(categories)
+
+
+SECURITY_TYPE_SCORES = {
+    "vulnerability": 80,
+    "ransomware": 55,
+    "malware": 45,
+    "threat_intelligence": 40,
+    "incident": 30,
+    "security_news": 15,
+}
+
+SECURITY_KEYWORD_SCORES = {
+    "cve-": 70,
+    "漏洞": 65,
+    "vulnerability": 65,
+    "vulnerabilities": 65,
+    "zero-day": 60,
+    "0day": 60,
+    "rce": 60,
+    "remote code execution": 60,
+    "在野利用": 55,
+    "exploited in the wild": 55,
+    "actively exploited": 55,
+    "kev": 50,
+    "cisa": 45,
+    "poc": 45,
+    "exploit": 45,
+    "patch": 35,
+    "补丁": 35,
+    "critical": 35,
+    "严重": 35,
+    "高危": 35,
+    "cvss": 30,
+    "ransomware": 25,
+    "勒索": 25,
+    "malware": 20,
+    "恶意软件": 20,
+    "apt": 20,
+}
+
+LOW_PRIORITY_KEYWORDS = {
+    "funding": 20,
+    "融资": 20,
+    "appointment": 15,
+    "partnership": 15,
+    "webinar": 15,
+    "conference": 15,
+}
+
+
+def feishu_priority_score(row) -> int:
+    ai = row_ai(row)
+    score = SECURITY_TYPE_SCORES.get(str(ai.get("security_type", "")).lower(), 0)
+
+    cves = normalize_text_list(ai.get("cves"))
+    if cves:
+        score += 80 + min(len(cves), 3) * 10
+
+    priority = str(ai.get("priority", "")).lower()
+    if priority in {"critical", "high"}:
+        score += 35
+    elif priority == "medium":
+        score += 15
+
+    text_parts = [
+        row["title"] or "",
+        row["summary"] or "",
+        (row["content_text"] or "")[:3000],
+        " ".join(parse_categories(row)),
+        str(ai.get("brief_zh", "")),
+        str(ai.get("summary_zh", "")),
+        " ".join(normalize_text_list(ai.get("tags_zh"))),
+    ]
+    searchable = " ".join(part for part in text_parts if part).lower()
+    for keyword, value in SECURITY_KEYWORD_SCORES.items():
+        if keyword in searchable:
+            score += value
+    for keyword, value in LOW_PRIORITY_KEYWORDS.items():
+        if keyword in searchable:
+            score -= value
+    return score
+
+
+def prioritize_feishu_rows(rows):
+    indexed_rows = list(enumerate(rows))
+    indexed_rows.sort(key=lambda item: (-feishu_priority_score(item[1]), item[0]))
+    return [row for _, row in indexed_rows]
+
+
+def chunk_rows(rows, batch_size: int):
+    batch_size = max(batch_size, 1)
+    for start in range(0, len(rows), batch_size):
+        yield start, rows[start : start + batch_size]
+
+
+def build_feishu_text(
+    rows,
+    range_label: str = "",
+    batch_label: str = "",
+    start_index: int = 1,
+) -> str:
     lines = ["安全资讯简报"]
     if range_label:
         lines.extend([f"时间窗口: {range_label}"])
+    if batch_label:
+        lines.append(f"批次: {batch_label}")
     lines.append("")
     if not rows:
         lines.append("本时段暂无新增安全资讯。")
         return "\n".join(lines).strip()
 
-    for index, row in enumerate(rows, start=1):
+    for index, row in enumerate(rows, start=start_index):
         ai = row_ai(row)
         synopsis = ai.get("summary_zh") or ai.get("brief_zh") or fallback_brief(row)
         lines.extend(
@@ -479,7 +595,7 @@ def push_feishu(args: argparse.Namespace, db: Database) -> int:
         args.window,
         args.date,
     )
-    rows = rows[: args.limit]
+    rows = prioritize_feishu_rows(rows)[: args.limit]
     if not rows:
         if not args.no_empty_message:
             response = send_text(webhook, build_feishu_text(rows, range_label), secret=secret)
@@ -487,8 +603,24 @@ def push_feishu(args: argparse.Namespace, db: Database) -> int:
             return 0
         print("No articles to push.", file=sys.stderr)
         return 1
-    response = send_text(webhook, build_feishu_text(rows, range_label), secret=secret)
-    print(json.dumps(response, ensure_ascii=False))
+    batches = list(chunk_rows(rows, args.batch_size))
+    for batch_number, (start, batch_rows) in enumerate(batches, start=1):
+        batch_label = ""
+        if len(batches) > 1:
+            batch_label = f"{batch_number}/{len(batches)}"
+        response = send_text(
+            webhook,
+            build_feishu_text(
+                batch_rows,
+                range_label,
+                batch_label=batch_label,
+                start_index=start + 1,
+            ),
+            secret=secret,
+        )
+        print(json.dumps(response, ensure_ascii=False))
+        if batch_number < len(batches):
+            sleep(3)
     return 0
 
 
@@ -506,6 +638,7 @@ def feishu_workflow(args: argparse.Namespace, db: Database) -> int:
 
     push_args = argparse.Namespace(
         limit=args.push_limit,
+        batch_size=args.batch_size,
         date=args.date,
         window=args.window,
         no_empty_message=args.no_empty_message,

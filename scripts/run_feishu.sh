@@ -34,9 +34,17 @@ fi
 NOW=$(date '+%Y-%m-%d %H:%M:%S')
 LOG_FILE="$LOG_DIR/feishu.log"
 
-log()  { echo "[$NOW] $1" | tee -a "$LOG_FILE"; }
-warn() { echo "[$NOW] WARN: $1" | tee -a "$LOG_FILE" >&2; }
-err()  { echo "[$NOW] ERROR: $1" | tee -a "$LOG_FILE" >&2; }
+append_output() {
+  if [[ -t 1 ]]; then
+    tee -a "$LOG_FILE"
+  else
+    cat
+  fi
+}
+
+log()  { echo "[$NOW] $1" | append_output; }
+warn() { echo "[$NOW] WARN: $1" | append_output >&2; }
+err()  { echo "[$NOW] ERROR: $1" | append_output >&2; }
 
 log "工作流开始 (mode=$MODE, window=$WINDOW)"
 
@@ -75,6 +83,7 @@ case "$MODE" in
       push-feishu
       --window "$WINDOW"
       --limit "${PUSH_LIMIT:-20}"
+      --batch-size "${PUSH_BATCH_SIZE:-20}"
     )
     ARGS+=("$@")
     log "执行: $PYTHON ${ARGS[*]}"
@@ -86,6 +95,7 @@ case "$MODE" in
       --window "$WINDOW"
       --collect-limit "${COLLECT_LIMIT:-30}"
       --push-limit "${PUSH_LIMIT:-20}"
+      --batch-size "${PUSH_BATCH_SIZE:-20}"
     )
     ARGS+=("${AI_FLAG[@]}" "$@")
     log "执行: $PYTHON ${ARGS[*]}"
@@ -97,7 +107,7 @@ case "$MODE" in
 esac
 
 # ── 运行 ──
-if "$PYTHON" "${ARGS[@]}" 2>&1 | tee -a "$LOG_FILE"; then
+if "$PYTHON" "${ARGS[@]}" 2>&1 | append_output; then
   log "工作流完成"
 else
   err "工作流失败 (exit=$?)"
